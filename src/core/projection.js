@@ -27,12 +27,23 @@ export function defaultDistance(d) {
   return 1.2 * Math.sqrt(d);
 }
 
-// Viewpoint just beyond the facet at coordinate +0.5.
-export const SCHLEGEL_DISTANCE = 0.8;
+// The Schlegel viewpoint rides just outside the object: its distance is the
+// current maximum last-coordinate plus this margin. A fixed distance would
+// blow up under rotation, when vertices sweep out to the circumradius and
+// pass arbitrarily close to the viewpoint. With the margin the near cell
+// stays about four times the far cell — the classic legible nesting.
+export const SCHLEGEL_MARGIN = 0.35;
 
 export function project(vertices, options = {}) {
   const { mode = "perspective", dolly = 1 } = options;
   const n = vertices[0].length;
+
+  let schlegelDistance = 0;
+  if (mode === "schlegel") {
+    let maxLast = -Infinity;
+    for (const v of vertices) if (v[n - 1] > maxLast) maxLast = v[n - 1];
+    schlegelDistance = maxLast + SCHLEGEL_MARGIN;
+  }
 
   const points = [];
   const depth3 = n >= 3 ? [] : null;
@@ -45,7 +56,7 @@ export function project(vertices, options = {}) {
       const d = v.length;
       let step;
       if (mode === "schlegel" && first) {
-        step = perspectiveStep(v, SCHLEGEL_DISTANCE);
+        step = perspectiveStep(v, schlegelDistance);
       } else if (mode === "orthographic" && d > 3) {
         step = orthographicStep(v);
       } else {

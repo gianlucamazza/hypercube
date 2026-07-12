@@ -70,6 +70,27 @@ test("Schlegel n=4: the near cell projects outside the far cell", () => {
   assert.ok(near > far, `cube-within-cube: ${near} > ${far}`);
 });
 
+test("Schlegel stays bounded while the object rotates", () => {
+  const { vertices } = hypercube(4);
+  // Sweep a rotation that carries vertices out to the circumradius along w.
+  for (let k = 0; k <= 24; k++) {
+    const theta = (k / 24) * Math.PI;
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    const rotated = vertices.map((v) => [
+      c * v[0] - s * v[3],
+      v[1],
+      v[2],
+      s * v[0] + c * v[3],
+    ]);
+    const { points } = project(rotated, { mode: "schlegel" });
+    for (const p of points) {
+      const r = Math.hypot(p[0], p[1]);
+      assert.ok(Number.isFinite(r) && r < 30, `radius ${r} at theta ${theta}`);
+    }
+  }
+});
+
 test("dolly widens the final perspective (larger distance, flatter image)", () => {
   const { vertices } = hypercube(4);
   const tight = project(vertices, { dolly: 1 });

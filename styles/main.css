@@ -1,0 +1,291 @@
+/* Design tokens ----------------------------------------------------------- */
+
+:root {
+  --void: #050507;
+  --void-core: #0b0b12;
+  --ice: #c9d4e0;
+  --amber: #e2c39a;
+  --whisper: rgba(180, 192, 208, 0.6);
+  --whisper-dim: rgba(180, 192, 208, 0.3);
+  --hairline: rgba(180, 192, 208, 0.16);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: system-ui, -apple-system, sans-serif;
+}
+
+/* Stage -------------------------------------------------------------------- */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    var(--void-core),
+    var(--void) 78%
+  );
+  color: var(--whisper);
+  font-family: var(--sans);
+  user-select: none;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+#scene:active {
+  cursor: grabbing;
+}
+
+/* The dimension, as a watermark: enormous and nearly invisible ------------- */
+
+#ghost-n {
+  position: fixed;
+  top: 2vh;
+  left: 4vw;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(90px, 24vh, 260px);
+  line-height: 1;
+  color: rgba(201, 212, 224, 0.05);
+  pointer-events: none;
+  transition: color 1.2s ease;
+}
+
+/* Shared UI behaviour: chrome dissolves when the hand is still ------------- */
+
+.ui {
+  position: fixed;
+  transition: opacity 1.2s ease;
+}
+
+body.idle .ui {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.idle {
+  cursor: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 1px solid var(--amber);
+  outline-offset: 3px;
+}
+
+/* Bottom bar ---------------------------------------------------------------- */
+
+#bar {
+  bottom: 4vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3.5em;
+  align-items: baseline;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+#bar .group {
+  display: flex;
+  gap: 1.4em;
+  align-items: baseline;
+}
+
+#bar button {
+  color: var(--whisper-dim);
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0.4em 0;
+  transition: color 0.4s ease;
+}
+
+#bar button:hover {
+  color: var(--ice);
+}
+
+#bar button[aria-pressed="true"] {
+  color: var(--amber);
+}
+
+#bar button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+#bar .numeral {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--ice);
+  letter-spacing: 0;
+  text-transform: none;
+  min-width: 1em;
+  text-align: center;
+}
+
+/* Plane grid: C(n,2) dots, the formula made tangible ------------------------ */
+
+#planes {
+  left: 4vw;
+  bottom: 4vh;
+  display: grid;
+  gap: 10px;
+}
+
+.plane-dot {
+  position: relative;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--whisper-dim);
+  transition:
+    background 0.4s ease,
+    box-shadow 0.4s ease,
+    border-color 0.4s ease;
+}
+
+.plane-dot:hover {
+  border-color: var(--ice);
+}
+
+.plane-dot[aria-pressed="true"] {
+  background: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 0 0 10px rgba(226, 195, 154, 0.55);
+}
+
+.plane-dot::after {
+  content: attr(data-name);
+  position: absolute;
+  left: 16px;
+  top: -3px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--whisper);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.plane-dot:hover::after,
+.plane-dot:focus-visible::after {
+  opacity: 1;
+}
+
+/* Structure panel ------------------------------------------------------------ */
+
+#panel-toggle {
+  top: 3.5vh;
+  right: 4vw;
+  font-family: var(--serif);
+  font-size: 20px;
+  color: var(--whisper-dim);
+  transition: color 0.4s ease;
+}
+
+#panel-toggle:hover,
+#panel-toggle[aria-expanded="true"] {
+  color: var(--ice);
+}
+
+#panel {
+  top: calc(3.5vh + 44px);
+  right: 4vw;
+  width: 230px;
+  padding: 18px 20px;
+  background: rgba(11, 11, 18, 0.72);
+  border: 1px solid var(--hairline);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+#panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ice);
+}
+
+#panel td:last-child {
+  text-align: right;
+  font-style: italic;
+}
+
+#panel .formula {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--whisper);
+}
+
+#panel .formula i {
+  font-family: var(--serif);
+}
+
+#panel .gray-toggle {
+  display: block;
+  margin-top: 12px;
+  cursor: pointer;
+  color: var(--whisper);
+}
+
+#panel .gray-toggle input {
+  accent-color: var(--amber);
+  margin-right: 6px;
+}
+
+/* Quality floor ---------------------------------------------------------------- */
+
+noscript {
+  position: fixed;
+  top: 50%;
+  width: 100%;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  #bar {
+    flex-direction: column;
+    gap: 1em;
+    align-items: center;
+    bottom: 3vh;
+  }
+  #ghost-n {
+    font-size: clamp(60px, 14vh, 120px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui,
+  #bar button,
+  .plane-dot,
+  #ghost-n {
+    transition: none;
+  }
+}
