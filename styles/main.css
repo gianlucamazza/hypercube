@@ -177,6 +177,11 @@ button:focus-visible {
   box-shadow: 0 0 10px rgba(226, 195, 154, 0.55);
 }
 
+/* Diagonal squares: the axis mirrors of B_n (the dots above are its planes) */
+.plane-dot.mirror {
+  border-radius: 2px;
+}
+
 .plane-dot::after {
   content: attr(data-name);
   position: absolute;
@@ -258,6 +263,19 @@ button:focus-visible {
 #panel .gray-toggle input {
   accent-color: var(--amber);
   margin-right: 6px;
+}
+
+/* Pause indicator: quiet, and immune to the idle fade -------------------------- */
+
+#paused {
+  position: fixed;
+  top: 3.5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--whisper-dim);
 }
 
 /* Quality floor ---------------------------------------------------------------- */

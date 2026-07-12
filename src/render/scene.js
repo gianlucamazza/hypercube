@@ -5,7 +5,7 @@
 import { mulMatVec } from "../core/matrix.js";
 import { project } from "../core/projection.js";
 import { grayCode } from "../core/combinatorics.js";
-import { edgeStyle, accent } from "./palette.js";
+import { edgeStyle, faceStyle, accent } from "./palette.js";
 
 const COMET_SPEED = 1; // vertices per second along the Gray cycle
 const COMET_TRAIL = 10; // trailing segments
@@ -26,10 +26,23 @@ export function createScene(renderer) {
   let fitScale = null;
 
   function draw(state, time) {
-    const { geometry, Q, projection: mode, dolly } = state;
+    const { geometry, Q, projection: mode, dolly, mirrorScale } = state;
     const { ctx } = renderer;
 
-    const rotated = geometry.vertices.map((v) => mulMatVec(Q, v));
+    // A running mirror animation scales one object axis from +1 through 0
+    // to -1: the object collapses onto its (n-1)-shadow and re-inflates
+    // reflected — one generator of B_n, watched happening.
+    let source = geometry.vertices;
+    if (mirrorScale) {
+      const { axis, s } = mirrorScale;
+      source = source.map((v) => {
+        const w = v.slice();
+        w[axis] *= s;
+        return w;
+      });
+    }
+
+    const rotated = source.map((v) => mulMatVec(Q, v));
     const { points, depth3, depthW } = project(rotated, { mode, dolly });
 
     // Fit the projection into the viewport, slewing slowly so the object
@@ -55,6 +68,29 @@ export function createScene(renderer) {
       );
 
     renderer.begin();
+
+    // Face veils, only where they explain: in the Schlegel diagram the
+    // translucent fills give the nested cells their volume.
+    if (mode === "schlegel" && geometry.faces.length > 0) {
+      const faceDepth = (f) =>
+        depthT ? f.reduce((s, v) => s + depthT[v], 0) / f.length : 0.7;
+      const faceOrder = [...geometry.faces].sort(
+        (a, b) => faceDepth(a) - faceDepth(b),
+      );
+      for (const face of faceOrder) {
+        const warm = warmT
+          ? face.reduce((s, v) => s + warmT[v], 0) / face.length
+          : null;
+        ctx.fillStyle = faceStyle(faceDepth(face), warm);
+        ctx.beginPath();
+        ctx.moveTo(screen[face[0]][0], screen[face[0]][1]);
+        for (let k = 1; k < face.length; k++)
+          ctx.lineTo(screen[face[k]][0], screen[face[k]][1]);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
     for (const i of order) {
       const [a, b] = geometry.edges[i];
       const warm = warmT ? (warmT[a] + warmT[b]) / 2 : null;
@@ -67,7 +103,9 @@ export function createScene(renderer) {
       ctx.stroke();
     }
 
-    if (state.gray) drawComet(ctx, screen, geometry.n, time);
+    // The comet's cycle indexes hypercube vertices; the net has its own.
+    if (state.gray && state.view !== "net")
+      drawComet(ctx, screen, geometry.n, time);
   }
 
   // The binary-reflected Gray code is a Hamiltonian cycle on Q_n: a single

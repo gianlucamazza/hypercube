@@ -1,6 +1,7 @@
 // Entry point: owns the app state, wires core -> render -> ui, runs the loop.
 
 import { hypercube } from "./core/hypercube.js";
+import { net } from "./core/net.js";
 import { identity, orthonormalize } from "./core/matrix.js";
 import { applyPlaneRotation, composeVelocities } from "./core/rotation.js";
 import { createRenderer } from "./render/renderer.js";
@@ -18,6 +19,7 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const state = {
   n: 4,
+  view: "solid", // 'solid' | 'net' (the unfolded development)
   geometry: hypercube(4),
   Q: identity(4),
   velocities: new Map(), // "i,j" -> omega (rad/s)
@@ -26,14 +28,24 @@ const state = {
   dolly: 1,
   paused: reducedMotion.matches,
   gray: false,
+  mirrorScale: null, // { axis, s } while a reflection animates
 };
+
+let mirrorAnim = null; // { axis, start }
+const MIRROR_MS = 1100;
+
+function rebuildGeometry() {
+  state.geometry = state.view === "net" ? net(state.n) : hypercube(state.n);
+}
 
 const actions = {
   setDimension(n) {
     if (n < MIN_N || n > MAX_N || n === state.n) return;
     state.n = n;
-    state.geometry = hypercube(n);
+    rebuildGeometry();
     state.Q = identity(n); // a deliberate reset of gaze
+    mirrorAnim = null;
+    state.mirrorScale = null;
     if (state.preset) {
       applyVelocities(presetByName(state.preset));
     } else {
@@ -51,6 +63,24 @@ const actions = {
     if (!["perspective", "orthographic", "schlegel"].includes(mode)) return;
     state.projection = mode;
     sync();
+  },
+
+  setView(view) {
+    if (!["solid", "net"].includes(view) || view === state.view) return;
+    state.view = view;
+    rebuildGeometry();
+    state.Q = identity(state.n); // present the new shape frontally
+    mirrorAnim = null;
+    state.mirrorScale = null;
+    sync();
+  },
+
+  // One reflection of B_n, watched happening: scale the axis +1 -> -1,
+  // collapsing the object through its (n-1)-shadow. The vertex set is
+  // setwise invariant, so no permanent state is needed afterwards.
+  mirrorAxis(axis) {
+    if (axis >= state.n || mirrorAnim) return;
+    mirrorAnim = { axis, start: performance.now() };
   },
 
   applyPreset(name) {
@@ -79,6 +109,7 @@ const actions = {
 
   togglePause() {
     state.paused = !state.paused;
+    sync();
   },
 
   toggleGray() {
@@ -97,6 +128,7 @@ function applyVelocities(preset) {
 
 const canvas = document.getElementById("scene");
 const ghost = document.getElementById("ghost-n");
+const pausedEl = document.getElementById("paused");
 const renderer = createRenderer(canvas);
 const scene = createScene(renderer);
 
@@ -118,15 +150,17 @@ const panel = initPanel({
 function sync() {
   controls.update();
   panel.update();
+  pausedEl.hidden = !state.paused;
 }
 
 ghost.textContent = String(state.n);
 actions.applyPreset("stillness");
 
-// A pose is shareable: ?n=5&projection=schlegel&preset=isocline&gray=1
+// A pose is shareable: ?n=5&view=net&projection=schlegel&preset=isocline&gray=1
 const params = new URLSearchParams(location.search);
 if (params.has("preset")) actions.applyPreset(params.get("preset"));
 if (params.has("n")) actions.setDimension(Number(params.get("n")));
+if (params.has("view")) actions.setView(params.get("view"));
 if (params.has("projection")) actions.setProjection(params.get("projection"));
 if (params.get("gray") === "1") actions.toggleGray();
 
@@ -162,6 +196,16 @@ function frame(now) {
     state.Q = composeVelocities(state.Q, parsedVelocities(), dt);
   }
   if (++frames % REORTHO_EVERY === 0) state.Q = orthonormalize(state.Q);
+
+  if (mirrorAnim) {
+    const t = (now - mirrorAnim.start) / MIRROR_MS;
+    if (t >= 1) {
+      mirrorAnim = null;
+      state.mirrorScale = null;
+    } else {
+      state.mirrorScale = { axis: mirrorAnim.axis, s: Math.cos(Math.PI * t) };
+    }
+  }
 
   scene.draw(state, now / 1000);
   requestAnimationFrame(frame);

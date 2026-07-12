@@ -41,6 +41,13 @@ export function edgeStyle(depthT, warmT) {
   };
 }
 
+// Translucent face veils (Schlegel mode): a breath of the same temperature.
+export function faceStyle(depthT, warmT) {
+  const alpha = 0.02 + 0.055 * smoothstep(depthT);
+  const [r, g, b] = warmT == null ? ICE : temperature(warmT);
+  return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+}
+
 // The Gray-code comet and its trail.
 export const ACCENT = [255, 244, 224];
 

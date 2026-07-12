@@ -2,7 +2,7 @@
 // translucent table of element counts with the general formula, plus the
 // Gray-code toggle. One line of context per item, nothing more.
 
-import { elementCounts } from "../core/combinatorics.js";
+import { elementCounts, symmetryOrder } from "../core/combinatorics.js";
 
 const ELEMENT_NAMES = [
   "vertices",
@@ -25,7 +25,8 @@ export function initPanel({ toggle, panel, state, actions }) {
   const formula = document.createElement("p");
   formula.className = "formula";
   formula.innerHTML =
-    "k-elements of the n-cube: <i>C(n,k)&thinsp;·&thinsp;2<sup>n−k</sup></i>";
+    "k-elements of the n-cube: <i>C(n,k)&thinsp;·&thinsp;2<sup>n−k</sup></i><br />" +
+    "symmetries: <i>2<sup>n</sup>&thinsp;·&thinsp;n!</i> — mirrors and quarter-turns";
 
   const grayLabel = document.createElement("label");
   grayLabel.className = "gray-toggle";
@@ -52,6 +53,12 @@ export function initPanel({ toggle, panel, state, actions }) {
       row.insertCell().textContent = ELEMENT_NAMES[k];
       row.insertCell().textContent = String(counts[k]);
     }
+    const symmetries = table.insertRow();
+    symmetries.className = "symmetries";
+    symmetries.title =
+      "the hyperoctahedral group B_n: 2^n sign flips × n! axis permutations";
+    symmetries.insertCell().textContent = "symmetries";
+    symmetries.insertCell().textContent = String(symmetryOrder(state.n));
   }
 
   return { update };

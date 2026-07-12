@@ -6,6 +6,7 @@ import {
   grayCode,
   rotationPlanes,
   planeName,
+  symmetryOrder,
 } from "../src/core/combinatorics.js";
 import { bitHamming } from "./helpers.js";
 
@@ -28,6 +29,13 @@ test("elementCounts sums to 3^n (each element picks -, 0, + per axis)", () => {
     const sum = elementCounts(n).reduce((a, b) => a + b, 0);
     assert.equal(sum, 3 ** n, `n=${n}`);
   }
+});
+
+test("symmetryOrder is 2^n · n! (384 for the tesseract)", () => {
+  assert.deepEqual(
+    [2, 3, 4, 5].map((n) => symmetryOrder(n)),
+    [8, 48, 384, 3840],
+  );
 });
 
 test("grayCode is a Hamiltonian cycle on Q_n", () => {
