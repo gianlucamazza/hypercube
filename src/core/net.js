@@ -6,13 +6,11 @@
 
 import { hypercube } from "./hypercube.js";
 
-export function net(n) {
+// Cell centres in R^(n-1): one at the origin, one beyond each of its
+// faces, and the tail two steps down the unfolding axis (the second
+// facet of the folded axis, giving the cross its long arm).
+export function netCentres(n) {
   const cellDim = n - 1;
-  const cell = hypercube(cellDim);
-
-  // Cell centres in R^(n-1): one at the origin, one beyond each of its
-  // faces, and the tail two steps down the unfolding axis (the second
-  // facet of the folded axis, giving the cross its long arm).
   const tailAxis = Math.min(1, cellDim - 1);
   const centres = [new Array(cellDim).fill(0)];
   for (let a = 0; a < cellDim; a++) {
@@ -25,6 +23,13 @@ export function net(n) {
   const tail = new Array(cellDim).fill(0);
   tail[tailAxis] = -2;
   centres.push(tail);
+  return centres;
+}
+
+export function net(n) {
+  const cellDim = n - 1;
+  const cell = hypercube(cellDim);
+  const centres = netCentres(n);
 
   // Adjacent cells share faces (and, in the cross arms, whole edges):
   // dedupe vertices by exact coordinates and edges by endpoint pair.

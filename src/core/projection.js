@@ -21,6 +21,15 @@
 // vertices behind the camera. The floor guarantees denominator >= CLIP_MARGIN
 // for every vertex at every stage, hence positive scales and bounded output,
 // while leaving all images that were already safe untouched.
+//
+// Boundedness theorem (docs/mathematics.md, section 4). Unconditionally,
+// D - depth >= CLIP_MARGIN * max(extent, 1) > 0: finite, positive scales.
+// The stronger claim — per-stage magnification <= 1 + 1/CLIP_MARGIN — holds
+// whenever the input cloud contains a sign-antipodal pair {x, -x}: positive
+// scales preserve coordinate signs, so the pair's depths straddle zero at
+// every stage, hence maxDepth <= extent. Every reachable cloud qualifies:
+// the hypercube and the net's central cell are antipodally symmetric, and
+// rotations and the mirror's axis scaling are linear and odd.
 
 export function perspectiveStep(v, distance) {
   const depth = v[v.length - 1];
@@ -62,6 +71,7 @@ export function project(vertices, options = {}) {
   const points = vertices.map((v) => v.slice());
   const depth3 = n >= 3 ? new Array(count) : null;
   const depthW = n >= 4 ? new Array(count) : null;
+  const stages = [];
 
   for (let d = n; d > 2; d--) {
     const first = d === n;
@@ -83,6 +93,7 @@ export function project(vertices, options = {}) {
       const base = defaultDistance(d) * (d === 3 ? dolly : 1);
       distance = Math.max(base, maxDepth + adaptiveMargin(maxDepth, minDepth));
     }
+    stages.push({ d, distance, minDepth, maxDepth, orthographic });
 
     for (let k = 0; k < count; k++) {
       const p = points[k];
@@ -97,5 +108,5 @@ export function project(vertices, options = {}) {
     }
   }
 
-  return { points, depth3, depthW };
+  return { points, depth3, depthW, stages };
 }

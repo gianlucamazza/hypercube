@@ -219,9 +219,10 @@ const measureFps = () =>
     requestAnimationFrame(tick);
   })
 `);
+const FPS_MIN = Number(process.env.FPS_MIN ?? 50);
 let fps = await measureFps();
-if (fps < 50) fps = Math.max(fps, await measureFps()); // absorb host-load spikes
-check("fps >= 50 at n=6 tumble", fps >= 50, `${fps} fps`);
+if (fps < FPS_MIN) fps = Math.max(fps, await measureFps()); // absorb host-load spikes
+check(`fps >= ${FPS_MIN} at n=6 tumble`, fps >= FPS_MIN, `${fps} fps`);
 
 check("no console errors", consoleErrors.length === 0, consoleErrors.join(" | "));
 

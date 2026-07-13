@@ -12,7 +12,7 @@ import {
   applyPlaneRotation,
   composeVelocities,
 } from "../src/core/rotation.js";
-import { assertClose, assertMatrixClose } from "./helpers.js";
+import { assertClose, assertMatrixClose, det } from "./helpers.js";
 
 test("planeRotation is orthogonal and preserves norms", () => {
   for (const n of [3, 4, 6]) {
@@ -79,4 +79,39 @@ test("drift: 10000 small rotations, then orthonormalize -> QQt = I", () => {
   }
   Q = orthonormalize(Q);
   assertMatrixClose(mulMat(Q, transpose(Q)), identity(n), 1e-9);
+  // The SO(n) half of the invariant: cleanup must not reflect the pose.
+  assertClose(det(Q), 1, 1e-9, "det(Q) after drift + MGS");
+});
+
+// MGS factors A = L·Q with L lower-triangular and diag(L) the (positive) row
+// norms, so det A = det L · det Q with det L > 0: re-orthonormalization
+// preserves the determinant's sign. Pinned in both directions.
+test("orthonormalize preserves orientation (det sign)", () => {
+  const R = planeRotation(4, 1, 2, 0.6);
+  assertClose(det(R), 1, 1e-12, "plane rotation is in SO(n)");
+
+  // A drifted near-rotation (det > 0) stays det = +1 through MGS.
+  const drifted = R.map((row, i) =>
+    row.map((x, j) => x + 1e-4 * Math.sin(3 * i + 5 * j)),
+  );
+  assert.ok(det(drifted) > 0, "perturbation keeps det > 0");
+  assertClose(det(orthonormalize(drifted)), 1, 1e-9, "det preserved at +1");
+
+  // The same matrix reflected (det < 0) comes out det = -1, not +1.
+  const reflected = drifted.map((row, i) =>
+    i === 0 ? row.map((x) => -x) : row.slice(),
+  );
+  assert.ok(det(reflected) < 0, "negated row flips det sign");
+  assertClose(det(orthonormalize(reflected)), -1, 1e-9, "det preserved at -1");
+});
+
+test("orthonormalize throws on rank-deficient input", () => {
+  assert.throws(
+    () =>
+      orthonormalize([
+        [1, 0],
+        [1, 0],
+      ]),
+    /rank-deficient/,
+  );
 });

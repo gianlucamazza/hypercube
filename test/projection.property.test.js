@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { project } from "../src/core/projection.js";
+import { project, CLIP_MARGIN } from "../src/core/projection.js";
 import { hypercube, cellVertices } from "../src/core/hypercube.js";
 import { net } from "../src/core/net.js";
 import { planeRotation, applyPlaneRotation } from "../src/core/rotation.js";
@@ -11,7 +11,7 @@ import {
   mulMatVec,
   mulMat,
 } from "../src/core/matrix.js";
-import { lcg, assertClose } from "./helpers.js";
+import { lcg, assertClose, det } from "./helpers.js";
 
 // The projection cascade must stay bounded and finite for EVERY reachable
 // pose: perspective magnification compounds across stages, the Schlegel
@@ -28,7 +28,11 @@ const DOLLYS = [0.5, 1, 4];
 // 36,000 seeded poses (LCG seed 12345, n=2..6, both geometries, all modes,
 // dolly {0.5, 1, 4}). The sweeps here are seeded, hence deterministic;
 // raise this consciously only if the projection geometry changes.
+// Crude analytic ceiling for scale: circumradius <= 2.70 (net(6), sqrt(7.25))
+// times at most four stage magnifications of 1 + 1/0.35 each ~ 597, so
+// finiteness is a theorem; 100 is the tight empirical bound with headroom.
 const RADIUS_BOUND = 100;
+const MAX_MAGNIFICATION = 1 + 1 / CLIP_MARGIN; // 27/7 ~ 3.857 per stage
 
 function randomQ(n, rand, turns = 80) {
   let Q = identity(n);
@@ -75,12 +79,32 @@ function maxRadius(points) {
 }
 
 function assertBounded(vertices, opts, label) {
-  const { points } = project(vertices, opts);
+  const { points, stages } = project(vertices, opts);
   for (const p of points)
     assert.ok(
       Number.isFinite(p[0]) && Number.isFinite(p[1]),
       `${label}: non-finite point`,
     );
+  // The boundedness theorem, stage by stage: every reachable cloud contains
+  // a sign-antipodal pair, so the depths straddle zero (the hypothesis); the
+  // camera stays at least CLIP_MARGIN outside the cloud (unconditional); and
+  // the worst scale never exceeds 1 + 1/CLIP_MARGIN (the conclusion).
+  for (const st of stages) {
+    if (st.orthographic) continue;
+    assert.ok(
+      st.minDepth <= 1e-12 && st.maxDepth >= -1e-12,
+      `${label}: depths do not straddle zero at d=${st.d}`,
+    );
+    assert.ok(
+      st.distance - st.maxDepth >= CLIP_MARGIN - 1e-9,
+      `${label}: camera floor violated at d=${st.d}`,
+    );
+    const magnification = st.distance / (st.distance - st.maxDepth);
+    assert.ok(
+      magnification <= MAX_MAGNIFICATION + 1e-9,
+      `${label}: magnification ${magnification.toFixed(3)} at d=${st.d}`,
+    );
+  }
   const r = maxRadius(points);
   assert.ok(r <= RADIUS_BOUND, `${label}: radius ${r.toFixed(1)}`);
   // Every stage scale must be positive, so projection preserves the sign of
@@ -109,6 +133,7 @@ test("randomQ is orthogonal and rigid on hypercube edges", () => {
     for (let i = 0; i < n; i++)
       for (let j = 0; j < n; j++)
         assertClose(QQt[i][j], i === j ? 1 : 0, 1e-9, `QQt n=${n}`);
+    assertClose(det(Q), 1, 1e-9, `det(Q) n=${n}`); // SO(n), not just O(n)
     const { vertices, edges } = hypercube(n);
     const rotated = vertices.map((v) => mulMatVec(Q, v));
     for (const [a, b] of edges) {
@@ -162,7 +187,10 @@ test("witness: Schlegel n=4 stays bounded under the drag planes", () => {
 test("witness: Schlegel n=5,6 facet corner aligned to the next depth axis", () => {
   for (const n of [5, 6]) {
     const diagonal = new Array(n).fill(1);
-    diagonal[n - 1] = 0; // stay inside the fixed cell
+    // Zero the consumed coordinate: the Schlegel outer cell is dynamic
+    // (whichever cell has max depth in the current pose); this keeps the
+    // corner on the near cell's boundary.
+    diagonal[n - 1] = 0;
     const Q = alignToAxis(n, diagonal, n - 2);
     const rotated = hypercube(n).vertices.map((v) => mulMatVec(Q, v));
     for (const dolly of DOLLYS)
@@ -214,6 +242,11 @@ test("witness: orthographic main diagonal at closest dolly", () => {
 // D1 — perspective worst chain: per-stage worst depth x* = r^2/D compounds
 // r' = r / sqrt(1 - (r/D)^2); the final coordinate is placed exactly at the
 // pre-fix pole of the dollied final stage.
+// Derivation: maximizing the outgoing radius sqrt(r^2 - x^2) * D/(D - x)
+// over the depth x gives stationarity r^2 - xD = 0, i.e. x* = r^2/D; greedy
+// per-stage maximization is globally optimal for the pre-fix fixed distances
+// because each stage's outgoing radius is increasing in its incoming radius.
+// Post-fix (adaptive floor) this is a directed stress input, not extremal.
 function worstChain(n, dolly) {
   const coords = new Array(n).fill(0);
   let radius = Math.sqrt(n) / 2;
@@ -242,6 +275,36 @@ test("witness: perspective worst-chain point at the pole", () => {
         { mode: "perspective", dolly },
         `n=${n} dolly=${dolly}`,
       );
+    }
+  }
+});
+
+// D6 — mirror collapse: the mirror animation scales one object axis through
+// zero, a rank-deficient cloud the seeded sweep never reaches. Scaling is
+// linear and odd, so the sign-antipodal hypothesis survives and the theorem
+// must hold at every s, including the flat instant s = 0.
+test("witness: mirror collapse stays bounded and straddles zero", () => {
+  for (let n = 2; n <= 6; n++) {
+    const { vertices } = hypercube(n);
+    const rand = lcg(500 + n);
+    for (let trial = 0; trial < 3; trial++) {
+      const Q = randomQ(n, rand);
+      for (let axis = 0; axis < n; axis++) {
+        for (const s of [-1, -0.5, 0, 0.5]) {
+          const scaled = vertices.map((v) => {
+            const w = v.slice();
+            w[axis] *= s;
+            return w;
+          });
+          const rotated = scaled.map((v) => mulMatVec(Q, v));
+          for (const mode of MODES)
+            assertBounded(
+              rotated,
+              { mode },
+              `mirror n=${n} axis=${axis} s=${s} trial=${trial} ${mode}`,
+            );
+        }
+      }
     }
   }
 });

@@ -42,6 +42,14 @@ equal angles in `xy` and `zw` this is an _isoclinic_ (Clifford) double
 rotation, under which every vertex moves along a great circle of the
 3-sphere — the `isocline` preset.
 
+Why great circles: the equal-angle double rotation is `R(θ) = cos θ·I +
+sin θ·J` with `J = diag(J₂, J₂)` the block quarter-turn, which is both
+orthogonal and skew (`Jᵀ = −J`), so `⟨v, Jv⟩ = 0` and `|Jv| = |v|`. The
+orbit `cos θ·v + sin θ·Jv` is therefore the circle of radius `|v|` in the
+plane `span{v, Jv}` through the origin — a great circle of the sphere of
+radius `|v|`. At `n = 4` the circumradius is `√4/2 = 1`, so all 16 vertices
+ride great circles of the unit 3-sphere.
+
 Plane rotations in general do **not** commute, so a pose cannot be stored
 as a vector of angles: the same angles applied in a different order give a
 different orientation, and a mouse drag composes arbitrary incremental
@@ -54,6 +62,17 @@ which touches only rows `i` and `j` (`applyPlaneRotation`, O(n²)).
 Floating-point drift slowly de-orthogonalizes `Q`; a modified Gram–Schmidt
 pass every ~300 frames restores `Q Qᵀ = I` (the drift test composes 10 000
 rotations and checks exactly this).
+
+Gram–Schmidt also preserves orientation, so the cleanup keeps `Q` in
+`SO(n)` and never silently reflects the object. Proof: MGS factors the
+drifted matrix as `A = L·Q̂` with `L` lower-triangular whose diagonal holds
+the (positive) row norms, so `det A = det L · det Q̂` with `det L > 0` —
+the determinant's sign survives. `Q` starts at the identity and accumulates
+plane rotations (each `det = +1`), hence `det Q = +1` through every
+cleanup. The tests pin both directions: a drifted rotation comes out at
+`det = +1`, the same matrix with a row negated at `det = −1`
+(`orthonormalize preserves orientation` in `test/rotation.test.js`), and
+the drift test asserts `det(Q) = 1` after 10 000 compositions.
 
 ## 4. Projection — the cascade nD → 3D → 2D
 
@@ -90,12 +109,38 @@ stage therefore rides its camera adaptively:
     D = max(base distance, max depth + 0.35 · max(depth extent, 1))
 
 The margin proportional to the cloud's depth extent makes the cascade
-scale-invariant — one stage can magnify by at most `1.35 / 0.35 ≈ 3.9` no
-matter how large the incoming points are — and the floor at extent 1 (the
-frontal cube's extent) keeps all classic frontal images, including the
-Schlegel nesting ratio, exactly as a fixed camera would draw them. The
-property tests in `test/projection.property.test.js` pin this down with
-adversarial witnesses for each failure family.
+scale-invariant, and the floor at extent 1 (the frontal cube's extent)
+keeps all classic frontal images, including the Schlegel nesting ratio,
+exactly as a fixed camera would draw them.
+
+**Boundedness theorem.** (i) Unconditionally, every vertex at every
+perspective stage has denominator `D − depth ≥ 0.35 · max(extent, 1) > 0`,
+so all scales are positive and finite. (ii) If the input cloud contains a
+_sign-antipodal pair_ `{x, −x}`, then every stage magnifies by at most
+`1 + 1/0.35 ≈ 3.86`, no matter how large the incoming points are.
+
+Proof of (ii): positive scales multiply coordinates without changing their
+signs, so a sign-antipodal pair stays sign-antipodal through every stage;
+in particular its two depths always have opposite signs, giving
+`minDepth ≤ 0 ≤ maxDepth` by induction on the stages. Then `maxDepth ≤
+maxDepth − minDepth = extent`, so the worst scale is bounded by
+
+    D / (D − maxDepth) ≤ (maxDepth + margin) / margin
+                       ≤ 1 + extent / (0.35 · max(extent, 1)) ≤ 1 + 1/0.35
+
+The hypothesis is discharged for every cloud the app can produce: the
+hypercube and the net's central cell are antipodally symmetric vertex
+sets, and everything applied to them before projection — the rotation `Q`
+and the mirror animation's axis scaling — is linear and odd, so an
+antipodal pair survives into every stage's input. The property tests in
+`test/projection.property.test.js` assert straddling, the camera floor,
+and the magnification bound at every stage of all 36 000 seeded poses and
+of the directed witnesses D1–D6, one per failure family.
+
+(A rejected alternative: hardening the formula itself, e.g. `margin =
+0.35 · max(extent, 1, maxDepth)`, would bound magnification even for
+clouds entirely in front of the camera — but no reachable cloud is, so the
+extra branch would be dead code guarding against a theorem's failure.)
 
 Beyond the three projections there is one alternative _view_: the **net**
 (development) of the n-cube — its `2n` facet cells unfolded into the
@@ -105,6 +150,20 @@ this is the cross of eight cubes made famous by Dalí's _Corpus
 Hypercubus_; for `n = 3` the Latin cross of six squares. Because the net
 still lives in n-space, it can be rotated through the higher axes — the
 flat cross waves through the fourth dimension.
+
+The net is a genuine development, not just a pleasing arrangement. The
+`2n` facets `±e_k` of the n-cube form the facet-adjacency graph (two
+facets adjacent iff not opposite), and the construction unfolds along the
+spanning tree "star at one facet, plus the opposite facet attached through
+the `−e_tail` branch" — `2n − 1` tree edges. Each unfolding step is a
+rigid rotation of a facet about the `(n−2)`-face it shares with its
+parent, into the hyperplane: every placed cell is isometric to its facet
+and shares a full `(n−2)`-face — exactly `2^(n−2)` vertices — with its
+parent, whose centre sits at distance 1. Interiors never overlap: the
+cells are open unit cubes at distinct integer centres, and an overlap
+would need every centre coordinate to differ by less than 1, i.e. by 0.
+The tests in `test/net.test.js` verify the tree, the shared faces, and the
+disjointness for `n = 2..6`.
 
 ## 5. Gray codes — a light that visits every vertex
 

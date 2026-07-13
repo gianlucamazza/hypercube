@@ -11,3 +11,18 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+
+  # End-to-end verification against the runner's preinstalled Chrome —
+  # no new dependencies. FPS floor relaxed for shared CI hardware.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run verify
+        env:
+          CHROME: google-chrome
+          FPS_MIN: "30"

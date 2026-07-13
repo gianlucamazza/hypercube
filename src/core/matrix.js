@@ -57,6 +57,10 @@ export function orthonormalize(A) {
     let norm = 0;
     for (let k = 0; k < n; k++) norm += Q[i][k] * Q[i][k];
     norm = Math.sqrt(norm);
+    // Inputs are always slightly drifted rotations, so a (near-)zero norm is
+    // a caller bug; failing loudly beats silently poisoning the pose forever.
+    if (!(norm > 1e-12))
+      throw new Error("orthonormalize: rank-deficient input");
     for (let k = 0; k < n; k++) Q[i][k] /= norm;
   }
   return Q;

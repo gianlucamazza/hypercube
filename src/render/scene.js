@@ -59,7 +59,12 @@ export function createScene(renderer) {
       const r = Math.hypot(p[0], p[1]);
       if (r > maxR) maxR = r;
     }
-    const target = (0.36 * Math.min(renderer.width, renderer.height)) / maxR;
+    // A projection collapsed to a point (degenerate pose) must not divide
+    // the fit by zero: hold the previous scale through the instant.
+    const target =
+      maxR > 1e-9
+        ? (0.36 * Math.min(renderer.width, renderer.height)) / maxR
+        : (fitScale ?? 1);
     if (fitScale == null || fitGeometry !== geometry || fitMode !== mode) {
       fitScale = target;
       fitGeometry = geometry;
