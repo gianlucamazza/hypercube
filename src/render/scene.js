@@ -11,15 +11,18 @@ const COMET_SPEED = 1; // vertices per second along the Gray cycle
 const COMET_TRAIL = 10; // trailing segments
 
 function normalize(values) {
+  // Non-finite values (a violated projection assumption) must not poison
+  // the min/max or the painter sort: skip them, map them to neutral.
   let min = Infinity;
   let max = -Infinity;
   for (const v of values) {
+    if (!Number.isFinite(v)) continue;
     if (v < min) min = v;
     if (v > max) max = v;
   }
   const range = max - min;
-  if (range < 1e-9) return values.map(() => 0.7);
-  return values.map((v) => (v - min) / range);
+  if (!(range > 1e-9)) return values.map(() => 0.7);
+  return values.map((v) => (Number.isFinite(v) ? (v - min) / range : 0.7));
 }
 
 export function createScene(renderer) {

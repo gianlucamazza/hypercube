@@ -69,18 +69,33 @@ temperature.
 
 The three modes differ only in how the stages are configured:
 
-- **perspective** — perspective division at every stage, camera at
-  `1.2·√d` per stage (points stay within the circumradius `√d/2`, so
-  nothing clips).
+- **perspective** — perspective division at every stage, camera at a base
+  distance of `1.2·√d` per stage.
 - **orthographic** — drop coordinates above 3D, keep perspective for
   3D→2D. A fully orthographic image reads flat; the mixed form is legible
   while still honest about the higher dimensions.
 - **schlegel** — perspective from a viewpoint just outside one cell. The
   near cell projects large, the far cell nests inside it: the classic
-  cube-within-a-cube diagram of the tesseract. The viewpoint distance is
-  `max(w) + 0.35`, riding just outside the object: a fixed distance would
-  diverge under rotation, when vertices sweep out to the circumradius and
-  pass arbitrarily close to the viewpoint.
+  cube-within-a-cube diagram of the tesseract.
+
+No fixed camera distance is safe in the cascade. Each perspective stage
+multiplies the remaining coordinates by `D / (D − depth)`, so a later stage
+can receive points far beyond the original circumradius `√d/2`; the net's
+own circumradius already exceeds it; and the dollied final stage can pull
+the camera inside the cloud. Any of these drives a denominator to zero —
+the image spikes and vertices mirror behind the camera (reachable from the
+UI: a plain drag in Schlegel mode at n = 4 sufficed). Every perspective
+stage therefore rides its camera adaptively:
+
+    D = max(base distance, max depth + 0.35 · max(depth extent, 1))
+
+The margin proportional to the cloud's depth extent makes the cascade
+scale-invariant — one stage can magnify by at most `1.35 / 0.35 ≈ 3.9` no
+matter how large the incoming points are — and the floor at extent 1 (the
+frontal cube's extent) keeps all classic frontal images, including the
+Schlegel nesting ratio, exactly as a fixed camera would draw them. The
+property tests in `test/projection.property.test.js` pin this down with
+adversarial witnesses for each failure family.
 
 Beyond the three projections there is one alternative _view_: the **net**
 (development) of the n-cube — its `2n` facet cells unfolded into the
@@ -102,7 +117,7 @@ the hypercube, changing one coordinate at a time, and returns home.
 ## 6. The symmetry group B_n
 
 The full symmetry group of the n-cube is the hyperoctahedral group `B_n`:
-every symmetry is a *signed permutation* — permute the axes (`n!` ways),
+every symmetry is a _signed permutation_ — permute the axes (`n!` ways),
 then flip the sign of any subset of them (`2^n` ways):
 
     |B_n| = 2^n · n!

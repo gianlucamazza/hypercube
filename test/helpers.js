@@ -22,6 +22,16 @@ export function coordHamming(a, b) {
   return d;
 }
 
+// Tiny seeded LCG for reproducible property tests. Log the seed in
+// assertion messages so a failure can be replayed.
+export function lcg(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 2 ** 32;
+  };
+}
+
 export function bitHamming(a, b) {
   let x = a ^ b;
   let d = 0;
