@@ -27,7 +27,7 @@ Then open <http://localhost:8000>.
 | `solid · net` or `u`                                   | the object, or its unfolding (the Dalí cross for n = 4)                     |
 | `perspective · orthographic · schlegel` or `p / o / s` | projection (Schlegel adds translucent face veils)                           |
 | `stillness · isocline · tumble · within`               | motion presets                                                              |
-| grid, off-diagonal dots (bottom left)                  | toggle rotation in each of the C(n,2) planes                                |
+| grid, off-diagonal dots (bottom left)                  | toggle rotation in a C(n,2) plane; double-click: exact quarter-turn         |
 | grid, diagonal squares                                 | mirror an axis — one reflection of B_n, collapsing through the (n−1)-shadow |
 | drag                                                   | rotate the screen-facing planes                                             |
 | `Shift` + drag                                         | rotate against the highest axis (touch the 4th dimension)                   |
@@ -53,14 +53,18 @@ src/core/             pure math — no DOM, the only code under test
 src/render/           Canvas 2D wireframe: depth fade, w-temperature, comet
 src/ui/               controls, structure panel, motion presets
 test/                 node --test suite for the core
+tools/verify.mjs      headless end-to-end checks (npm run verify)
 docs/mathematics.md   the notes behind all of the above
 ```
 
 ## Test
 
 ```sh
-npm test   # node --test, zero dependencies
+npm test         # node --test over the pure core, zero dependencies
+npm run verify   # end-to-end checks in headless Chromium (set $CHROME to override)
 ```
+
+CI runs `npm test` on every push.
 
 ## Design notes
 

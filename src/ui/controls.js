@@ -68,7 +68,11 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       const b = button("", () => actions.togglePlane(key));
       b.className = "plane-dot";
       b.dataset.name = name;
-      b.setAttribute("aria-label", `rotate in the ${name} plane`);
+      b.setAttribute(
+        "aria-label",
+        `rotate in the ${name} plane (double-click: exact quarter-turn)`,
+      );
+      b.addEventListener("dblclick", () => actions.quarterTurn(key));
       b.style.gridRow = String(i + 1);
       b.style.gridColumn = String(j + 1);
       planeButtons.set(key, b);

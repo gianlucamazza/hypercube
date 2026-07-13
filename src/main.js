@@ -33,6 +33,8 @@ const state = {
 
 let mirrorAnim = null; // { axis, start }
 const MIRROR_MS = 1100;
+let quarterAnim = null; // { i, j, start, applied }
+const QUARTER_MS = 700;
 
 function rebuildGeometry() {
   state.geometry = state.view === "net" ? net(state.n) : hypercube(state.n);
@@ -83,11 +85,24 @@ const actions = {
     mirrorAnim = { axis, start: performance.now() };
   },
 
+  // An exact quarter-turn in one plane — the other generator of B_n.
+  quarterTurn(key) {
+    if (quarterAnim) return;
+    const [i, j] = key.split(",").map(Number);
+    if (j >= state.n) return;
+    quarterAnim = { i, j, start: performance.now(), applied: 0 };
+  },
+
   applyPreset(name) {
     const preset = presetByName(name);
     if (!preset) return;
     state.preset = name;
-    if (preset.projection) state.projection = preset.projection;
+    if (preset.projection) {
+      // A preset that chooses a projection speaks about the solid object;
+      // Schlegel on the flat net (all w = 0) would be a silent no-op.
+      actions.setView("solid");
+      state.projection = preset.projection;
+    }
     applyVelocities(preset);
     sync();
   },
@@ -207,8 +222,25 @@ function frame(now) {
     }
   }
 
+  if (quarterAnim) {
+    const t = Math.min(1, (now - quarterAnim.start) / QUARTER_MS);
+    const eased = t * t * (3 - 2 * t);
+    const target = (Math.PI / 2) * eased;
+    state.Q = applyPlaneRotation(
+      state.Q,
+      quarterAnim.i,
+      quarterAnim.j,
+      target - quarterAnim.applied,
+    );
+    quarterAnim.applied = target;
+    if (t >= 1) quarterAnim = null;
+  }
+
   scene.draw(state, now / 1000);
   requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);
+
+// Read-only debug handle for tools/verify.mjs — not part of any API.
+window.__state = state;

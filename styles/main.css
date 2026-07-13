@@ -297,6 +297,12 @@ noscript {
   #ghost-n {
     font-size: clamp(60px, 14vh, 120px);
   }
+  /* The stacked bar owns the bottom edge; the plane grid moves mid-left. */
+  #planes {
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
