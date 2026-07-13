@@ -24,6 +24,8 @@ function normalize(values) {
 
 export function createScene(renderer) {
   let fitScale = null;
+  let fitGeometry = null;
+  let fitMode = null;
 
   function draw(state, time) {
     const { geometry, Q, projection: mode, dolly, mirrorScale } = state;
@@ -45,16 +47,23 @@ export function createScene(renderer) {
     const rotated = source.map((v) => mulMatVec(Q, v));
     const { points, depth3, depthW } = project(rotated, { mode, dolly });
 
-    // Fit the projection into the viewport, slewing slowly so the object
-    // breathes instead of popping when its silhouette changes.
+    // Fit the projection into the viewport. Rotation changes the silhouette
+    // continuously, so the scale slews and the object breathes; a change of
+    // geometry or projection is a discontinuity and snaps at once (a slew
+    // there would let the new shape overflow the frame for a second).
     let maxR = 0;
     for (const p of points) {
       const r = Math.hypot(p[0], p[1]);
       if (r > maxR) maxR = r;
     }
     const target = (0.36 * Math.min(renderer.width, renderer.height)) / maxR;
-    fitScale =
-      fitScale == null ? target : fitScale + (target - fitScale) * 0.06;
+    if (fitScale == null || fitGeometry !== geometry || fitMode !== mode) {
+      fitScale = target;
+      fitGeometry = geometry;
+      fitMode = mode;
+    } else {
+      fitScale += (target - fitScale) * 0.06;
+    }
 
     const screen = points.map((p) => [p[0] * fitScale, p[1] * fitScale]);
     const depthT = depth3 ? normalize(depth3) : null;
