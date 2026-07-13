@@ -21,16 +21,17 @@ import { lcg, assertClose, det } from "./helpers.js";
 
 const MODES = ["perspective", "orthographic", "schlegel"];
 const DOLLYS = [0.5, 1, 4];
-// Two-tier guarantee. Theorem: with the adaptive camera floor every stage
-// scale is positive and at most (extent + margin) / margin = 1.35/0.35, so
-// projections are finite and sign-preserving (asserted exactly below).
-// Empirical regression ceiling: max projected radius measured at 63.97 over
-// 36,000 seeded poses (LCG seed 12345, n=2..6, both geometries, all modes,
-// dolly {0.5, 1, 4}). The sweeps here are seeded, hence deterministic;
-// raise this consciously only if the projection geometry changes.
+// Two-tier guarantee. Theorem: for sign-antipodal input clouds (every
+// reachable one) each stage scale is positive and at most
+// (extent + margin) / margin = 1.35/0.35, so projections are finite and
+// sign-preserving (asserted exactly below).
+// Empirical regression ceiling: max projected radius measured at 34.89
+// over this file's seeded sweep (600 poses, seeds 31n + |V|, n=2..6, both
+// geometries, each projected under all modes and dolly {0.5, 1, 4}).
+// Deterministic; raise consciously only if the projection changes.
 // Crude analytic ceiling for scale: circumradius <= 2.70 (net(6), sqrt(7.25))
 // times at most four stage magnifications of 1 + 1/0.35 each ~ 597, so
-// finiteness is a theorem; 100 is the tight empirical bound with headroom.
+// finiteness is a theorem; 100 is the empirical bound with headroom.
 const RADIUS_BOUND = 100;
 const MAX_MAGNIFICATION = 1 + 1 / CLIP_MARGIN; // 27/7 ~ 3.857 per stage
 
@@ -95,13 +96,16 @@ function assertBounded(vertices, opts, label) {
       st.minDepth <= 1e-12 && st.maxDepth >= -1e-12,
       `${label}: depths do not straddle zero at d=${st.d}`,
     );
+    const margin = CLIP_MARGIN * Math.max(st.maxDepth - st.minDepth, 1) - 1e-9;
     assert.ok(
-      st.distance - st.maxDepth >= CLIP_MARGIN - 1e-9,
+      st.distance - st.maxDepth >= margin,
       `${label}: camera floor violated at d=${st.d}`,
     );
+    // Bounded from BOTH sides: >= 1 excludes a negative (mirroring) or
+    // shrinking-camera state that the upper bound alone would accept.
     const magnification = st.distance / (st.distance - st.maxDepth);
     assert.ok(
-      magnification <= MAX_MAGNIFICATION + 1e-9,
+      magnification >= 1 - 1e-9 && magnification <= MAX_MAGNIFICATION + 1e-9,
       `${label}: magnification ${magnification.toFixed(3)} at d=${st.d}`,
     );
   }
@@ -109,10 +113,11 @@ function assertBounded(vertices, opts, label) {
   assert.ok(r <= RADIUS_BOUND, `${label}: radius ${r.toFixed(1)}`);
   // Every stage scale must be positive, so projection preserves the sign of
   // the transverse coordinates. A violation is a behind-the-camera mirror
-  // flip — bounded in radius, invisible to the checks above.
+  // flip — bounded in radius, invisible to the checks above. Only images
+  // near underflow are skipped: a positive IEEE scale never flips a sign,
+  // so no input-side window is needed.
   for (let k = 0; k < points.length; k++) {
     for (const c of [0, 1]) {
-      if (Math.abs(vertices[k][c]) < 0.05) continue;
       if (Math.abs(points[k][c]) < 1e-9) continue;
       assert.ok(
         Math.sign(points[k][c]) === Math.sign(vertices[k][c]),
@@ -259,8 +264,12 @@ function worstChain(n, dolly) {
     radius = Math.sqrt(radius * radius - x * x) * scale;
     accScale *= scale;
   }
+  // Cap the final depth just short of the full radius: at dolly 1 the pole
+  // lies beyond D3, and placing the whole radius on the depth axis would
+  // leave a zero transverse part — a vertex the radius and sign checks
+  // cannot see (the same degeneracy witness D5 tilts away from).
   const D3 = 1.2 * Math.sqrt(3) * dolly;
-  const x3 = Math.min(radius, D3);
+  const x3 = Math.min(radius * 0.995, D3);
   coords[2] = x3 / accScale;
   coords[0] = Math.sqrt(Math.max(0, radius * radius - x3 * x3)) / accScale;
   return coords;
@@ -310,8 +319,10 @@ test("witness: mirror collapse stays bounded and straddles zero", () => {
 });
 
 // Legibility guard: the adaptive floor must not distort the frontal Schlegel
-// diagram — near/far cell ratio stays classic (~3.86 today).
-test("Schlegel near/far cell ratio stays in [2, 6] at identity", () => {
+// diagram. The measured mean-radius ratio is ~5.72 at identity — larger
+// than the 3.86 first-stage scale ratio, because the far cell also
+// contracts through the second stage.
+test("Schlegel near/far cell ratio stays in [4, 7] at identity", () => {
   const n = 4;
   const { vertices } = hypercube(n);
   const { points } = project(vertices, { mode: "schlegel" });
@@ -320,5 +331,5 @@ test("Schlegel near/far cell ratio stays in [2, 6] at identity", () => {
   const ratio =
     meanRadius(cellVertices(n, n - 1, +1)) /
     meanRadius(cellVertices(n, n - 1, -1));
-  assert.ok(ratio > 2 && ratio < 6, `ratio ${ratio.toFixed(3)}`);
+  assert.ok(ratio > 4 && ratio < 7, `ratio ${ratio.toFixed(3)}`);
 });

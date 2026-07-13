@@ -42,7 +42,7 @@ await new Promise((r) => server.listen(PORT, r));
 const chrome = spawn(
   CHROME,
   [
-    "--headless=new",
+    "--headless",
     "--disable-gpu",
     "--hide-scrollbars",
     `--remote-debugging-port=${CDP_PORT}`,
@@ -51,6 +51,11 @@ const chrome = spawn(
   ],
   { stdio: "ignore" },
 );
+chrome.on("error", (err) => {
+  console.error(`verify: could not launch ${CHROME}: ${err.message}`);
+  server.close();
+  process.exit(2);
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -201,6 +206,30 @@ const lit = await evaluate(`(() => {
 check("fit snaps on geometry change (no overflow)", lit === 0, `${lit} border px`);
 await press("u");
 
+// Regression: two paths that used to throw inside frame() and freeze the
+// loop. (1) The comet trail at n=2: the cycle of 4 is shorter than the
+// trail, and the wrap went negative whenever the head sat at position 0 —
+// one second in every four, so 4.3 s of gray time guarantees crossing it.
+// (2) A quarter-turn in a high plane surviving a shrink of the dimension:
+// the last grid dot at n=6 is plane (4,5), which indexes past a 3x3 pose.
+await press("2");
+await press("g");
+await sleep(4300);
+await press("g");
+await press("6");
+await evaluate(`
+  [...document.querySelectorAll('.plane-dot:not(.mirror)')].pop()
+    .dispatchEvent(new MouseEvent('dblclick', {bubbles: true})); 0
+`);
+await press("3"); // mid-turn shrink
+await sleep(200);
+// Aliveness: Q advances only inside frame(), so a frozen loop (the browser
+// still answers rAF regardless) shows up as a motionless pose.
+const poseA = await evaluate(`JSON.stringify(window.__state.Q)`);
+await sleep(400);
+const poseB = await evaluate(`JSON.stringify(window.__state.Q)`);
+check("loop survives the n=2 comet and a mid-turn shrink", poseA !== poseB);
+
 // Frame rate at the heaviest setting.
 await press("6");
 await evaluate(
@@ -219,7 +248,9 @@ const measureFps = () =>
     requestAnimationFrame(tick);
   })
 `);
-const FPS_MIN = Number(process.env.FPS_MIN ?? 50);
+// Robust to unset, empty, or garbage env values (Number("") is 0).
+const fpsEnv = Number(process.env.FPS_MIN);
+const FPS_MIN = Number.isFinite(fpsEnv) && fpsEnv > 0 ? fpsEnv : 50;
 let fps = await measureFps();
 if (fps < FPS_MIN) fps = Math.max(fps, await measureFps()); // absorb host-load spikes
 check(`fps >= ${FPS_MIN} at n=6 tumble`, fps >= FPS_MIN, `${fps} fps`);

@@ -10,7 +10,9 @@
 //                  nests inside it (cube-within-a-cube for n=4)
 //
 // Every perspective stage places its camera at
-//   D = max(base distance, max depth + CLIP_MARGIN)
+//   D = max(base distance, max depth + CLIP_MARGIN * max(extent, 1))
+// except the Schlegel first stage, which sits just outside the cloud at
+//   D = max depth + SCHLEGEL_MARGIN * max(extent, 1)
 // The base distance (1.2*sqrt(d), dollied on the final stage) sets the look;
 // the adaptive floor keeps the camera outside the point cloud. A fixed
 // distance is NOT safe: perspective magnification compounds across stages
@@ -18,17 +20,20 @@
 // stage can receive points far beyond the original circumradius), and the
 // net geometry itself reaches coordinates past 2 — either way the fixed
 // denominator D - depth could reach zero, spiking the image and mirroring
-// vertices behind the camera. The floor guarantees denominator >= CLIP_MARGIN
-// for every vertex at every stage, hence positive scales and bounded output,
-// while leaving all images that were already safe untouched.
+// vertices behind the camera. The floor guarantees denominator >= margin
+// for every vertex at every stage, hence finite nonzero scales, while
+// leaving all images that were already safe untouched.
 //
 // Boundedness theorem (docs/mathematics.md, section 4). Unconditionally,
-// D - depth >= CLIP_MARGIN * max(extent, 1) > 0: finite, positive scales.
-// The stronger claim — per-stage magnification <= 1 + 1/CLIP_MARGIN — holds
-// whenever the input cloud contains a sign-antipodal pair {x, -x}: positive
-// scales preserve coordinate signs, so the pair's depths straddle zero at
-// every stage, hence maxDepth <= extent. Every reachable cloud qualifies:
-// the hypercube and the net's central cell are antipodally symmetric, and
+// D - depth >= CLIP_MARGIN * max(extent, 1) > 0: every scale is finite and
+// nonzero. (Not, by itself, positive: a Schlegel cloud entirely at negative
+// depth would put D below zero.) When the input cloud contains a
+// sign-antipodal pair {x, -x}, induction over the stages gives more: the
+// pair's depths straddle zero, so maxDepth >= 0, D >= margin > 0, all
+// scales are positive and preserve coordinate signs — which hands the
+// straddle to the next stage — and maxDepth <= extent bounds each stage's
+// magnification by 1 + 1/CLIP_MARGIN. Every reachable cloud qualifies: the
+// hypercube and the net's central cell are antipodally symmetric, and
 // rotations and the mirror's axis scaling are linear and odd.
 
 export function perspectiveStep(v, distance) {

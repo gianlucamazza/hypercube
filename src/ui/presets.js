@@ -12,7 +12,7 @@ export const PRESETS = [
   },
   {
     name: "isocline",
-    note: "two equal rotations — every vertex rides a great circle",
+    note: "two equal rotations — at n = 4 every vertex rides a great circle",
     velocities(n) {
       if (n < 4) return [{ plane: [0, 1], omega: 0.22 }];
       return [

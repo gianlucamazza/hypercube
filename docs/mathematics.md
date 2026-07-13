@@ -60,8 +60,9 @@ orthogonal matrix `Q ∈ SO(n)`, updated per frame by
 
 which touches only rows `i` and `j` (`applyPlaneRotation`, O(n²)).
 Floating-point drift slowly de-orthogonalizes `Q`; a modified Gram–Schmidt
-pass every ~300 frames restores `Q Qᵀ = I` (the drift test composes 10 000
-rotations and checks exactly this).
+pass every ~300 frames restores `Q Qᵀ = I` (the drift test composes 20 000
+rotations — two per simulated frame for 10 000 frames — and checks exactly
+this).
 
 Gram–Schmidt also preserves orientation, so the cleanup keeps `Q` in
 `SO(n)` and never silently reflects the object. Proof: MGS factors the
@@ -72,7 +73,7 @@ plane rotations (each `det = +1`), hence `det Q = +1` through every
 cleanup. The tests pin both directions: a drifted rotation comes out at
 `det = +1`, the same matrix with a row negated at `det = −1`
 (`orthonormalize preserves orientation` in `test/rotation.test.js`), and
-the drift test asserts `det(Q) = 1` after 10 000 compositions.
+the drift test asserts `det(Q) = 1` after 20 000 compositions.
 
 ## 4. Projection — the cascade nD → 3D → 2D
 
@@ -108,22 +109,33 @@ stage therefore rides its camera adaptively:
 
     D = max(base distance, max depth + 0.35 · max(depth extent, 1))
 
+except the Schlegel first stage, whose entire point is to sit _below_ the
+base distance, just outside the cloud: `D = max depth + 0.35 · max(depth
+extent, 1)`.
+
 The margin proportional to the cloud's depth extent makes the cascade
 scale-invariant, and the floor at extent 1 (the frontal cube's extent)
 keeps all classic frontal images, including the Schlegel nesting ratio,
 exactly as a fixed camera would draw them.
 
 **Boundedness theorem.** (i) Unconditionally, every vertex at every
-perspective stage has denominator `D − depth ≥ 0.35 · max(extent, 1) > 0`,
-so all scales are positive and finite. (ii) If the input cloud contains a
-_sign-antipodal pair_ `{x, −x}`, then every stage magnifies by at most
-`1 + 1/0.35 ≈ 3.86`, no matter how large the incoming points are.
+perspective stage has denominator `D − depth ≥ 0.35 · max(extent, 1) > 0`
+(up to float rounding), so all scales are finite and nonzero. This alone
+does not make them positive: a Schlegel cloud lying entirely at negative
+depth would put the camera itself at `D < 0`. (ii) If the input cloud
+contains a _sign-antipodal pair_ `{x, −x}`, then every scale is positive
+and every stage magnifies by at most `1 + 1/0.35 ≈ 3.86`, no matter how
+large the incoming points are.
 
-Proof of (ii): positive scales multiply coordinates without changing their
-signs, so a sign-antipodal pair stays sign-antipodal through every stage;
-in particular its two depths always have opposite signs, giving
-`minDepth ≤ 0 ≤ maxDepth` by induction on the stages. Then `maxDepth ≤
-maxDepth − minDepth = extent`, so the worst scale is bounded by
+Proof of (ii), by induction on the stages. Suppose the stage's input
+contains a sign-antipodal pair. Its two depths are never both strictly
+positive nor both strictly negative, so `minDepth ≤ 0 ≤ maxDepth`. Then
+`D ≥ maxDepth + margin ≥ margin > 0` (the non-Schlegel stages also have
+`D ≥ base > 0`), so every scale `D/(D − depth) ≥ D/(D − minDepth) > 0`:
+positive scales multiply coordinates without changing their signs, and the
+pair stays sign-antipodal into the next stage's input — the induction
+step. For the bound, `maxDepth ≤ maxDepth − minDepth = extent`, so the
+worst scale is
 
     D / (D − maxDepth) ≤ (maxDepth + margin) / margin
                        ≤ 1 + extent / (0.35 · max(extent, 1)) ≤ 1 + 1/0.35
@@ -133,9 +145,11 @@ hypercube and the net's central cell are antipodally symmetric vertex
 sets, and everything applied to them before projection — the rotation `Q`
 and the mirror animation's axis scaling — is linear and odd, so an
 antipodal pair survives into every stage's input. The property tests in
-`test/projection.property.test.js` assert straddling, the camera floor,
-and the magnification bound at every stage of all 36 000 seeded poses and
-of the directed witnesses D1–D6, one per failure family.
+`test/projection.property.test.js` assert straddling, the extent-scaled
+camera floor, and the magnification bound (from both sides) at every stage
+of 600 seeded poses — each projected under all three modes and three dolly
+values, 5 400 projections — and of the directed witnesses D1–D6, one per
+failure family.
 
 (A rejected alternative: hardening the formula itself, e.g. `margin =
 0.35 · max(extent, 1, maxDepth)`, would bound magnification even for

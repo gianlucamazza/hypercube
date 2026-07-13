@@ -65,14 +65,24 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       const [i, j] = plane;
       const key = `${i},${j}`;
       const name = planeName(plane);
-      const b = button("", () => actions.togglePlane(key));
+      // A double-click also fires two clicks; toggling on a short delay
+      // keeps the quarter-turn from silently rewriting the plane's velocity
+      // and dropping the active preset on the way.
+      let clickTimer = null;
+      const b = button("", () => {
+        clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => actions.togglePlane(key), 250);
+      });
       b.className = "plane-dot";
       b.dataset.name = name;
       b.setAttribute(
         "aria-label",
         `rotate in the ${name} plane (double-click: exact quarter-turn)`,
       );
-      b.addEventListener("dblclick", () => actions.quarterTurn(key));
+      b.addEventListener("dblclick", () => {
+        clearTimeout(clickTimer);
+        actions.quarterTurn(key);
+      });
       b.style.gridRow = String(i + 1);
       b.style.gridColumn = String(j + 1);
       planeButtons.set(key, b);
@@ -148,6 +158,7 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
   // --- Keyboard ---------------------------------------------------------
   window.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // browser shortcuts
     if (e.key >= String(MIN_N) && e.key <= String(MAX_N))
       actions.setDimension(Number(e.key));
     else if (e.key === "p") actions.setProjection("perspective");

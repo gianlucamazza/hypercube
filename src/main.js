@@ -42,12 +42,14 @@ function rebuildGeometry() {
 
 const actions = {
   setDimension(n) {
-    if (n < MIN_N || n > MAX_N || n === state.n) return;
+    // Number.isInteger also rejects NaN from a malformed ?n= URL parameter.
+    if (!Number.isInteger(n) || n < MIN_N || n > MAX_N || n === state.n) return;
     state.n = n;
     rebuildGeometry();
     state.Q = identity(n); // a deliberate reset of gaze
     mirrorAnim = null;
     state.mirrorScale = null;
+    quarterAnim = null; // its plane indices may not exist in the new n
     if (state.preset) {
       applyVelocities(presetByName(state.preset));
     } else {
@@ -74,6 +76,7 @@ const actions = {
     state.Q = identity(state.n); // present the new shape frontally
     mirrorAnim = null;
     state.mirrorScale = null;
+    quarterAnim = null; // a partial turn must not land on the fresh pose
     sync();
   },
 
@@ -204,6 +207,9 @@ let last = performance.now();
 let frames = 0;
 
 function frame(now) {
+  // Re-register first: an exception below must cost one frame, not
+  // silently freeze the loop forever.
+  requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
@@ -213,13 +219,14 @@ function frame(now) {
   if (++frames % REORTHO_EVERY === 0) state.Q = orthonormalize(state.Q);
 
   if (mirrorAnim) {
-    const t = (now - mirrorAnim.start) / MIRROR_MS;
-    if (t >= 1) {
-      mirrorAnim = null;
-      state.mirrorScale = null;
-    } else {
-      state.mirrorScale = { axis: mirrorAnim.axis, s: Math.cos(Math.PI * t) };
-    }
+    // Clamp so the s = -1 endpoint is rendered even after a frame hitch;
+    // the scale is cleared on the frame after, which draws the identical
+    // edge set (the vertex set is invariant under the full reflection).
+    const t = Math.min(1, (now - mirrorAnim.start) / MIRROR_MS);
+    state.mirrorScale = { axis: mirrorAnim.axis, s: Math.cos(Math.PI * t) };
+    if (t >= 1) mirrorAnim = null;
+  } else if (state.mirrorScale) {
+    state.mirrorScale = null;
   }
 
   if (quarterAnim) {
@@ -237,7 +244,6 @@ function frame(now) {
   }
 
   scene.draw(state, now / 1000);
-  requestAnimationFrame(frame);
 }
 
 requestAnimationFrame(frame);

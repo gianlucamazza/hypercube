@@ -31,6 +31,10 @@ export function applyPlaneRotation(Q, i, j, theta) {
 
 // Fold a set of angular velocities over Q for a time step dt.
 // velocities: iterable of { plane: [i, j], omega } with omega in rad/s.
+// Sequential folding is a first-order integrator for the simultaneous
+// rotation exp(sum omega_p dt E_p): the result stays exactly in SO(n) but
+// differs from the exponential — and depends on iteration order — by the
+// commutator term O(omega^2 dt^2), invisible at frame-sized dt.
 export function composeVelocities(Q, velocities, dt) {
   let out = Q;
   for (const { plane, omega } of velocities) {

@@ -43,7 +43,8 @@ A pose is shareable via URL:
 ```
 index.html            single page, no build
 styles/main.css       dark theme tokens, idle-fading chrome
-src/core/             pure math — no DOM, the only code under test
+src/main.js           entry point: state, actions, the frame loop
+src/core/             pure math — no DOM
   hypercube.js        vertices as bit strings, edges as bit flips
   net.js              the 2n facets unfolded (Dalí cross), same pipeline
   combinatorics.js    counts, Gray code, rotation planes, |B_n| = 2^n·n!
@@ -52,7 +53,7 @@ src/core/             pure math — no DOM, the only code under test
   projection.js       perspective / orthographic / Schlegel cascade to 2D
 src/render/           Canvas 2D wireframe: depth fade, w-temperature, comet
 src/ui/               controls, structure panel, motion presets
-test/                 node --test suite for the core
+test/                 node --test suite (core + a canvas-stubbed scene)
 tools/verify.mjs      headless end-to-end checks (npm run verify)
 docs/mathematics.md   the notes behind all of the above
 ```
@@ -60,11 +61,12 @@ docs/mathematics.md   the notes behind all of the above
 ## Test
 
 ```sh
-npm test         # node --test over the pure core, zero dependencies
+npm test         # node --test, zero dependencies
 npm run verify   # end-to-end checks in headless Chromium (set $CHROME to override)
 ```
 
-CI runs `npm test` on every push.
+CI runs both — `npm test` and the headless `verify` — on every push and
+pull request.
 
 ## Design notes
 

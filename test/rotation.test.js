@@ -29,6 +29,16 @@ test("planeRotation is orthogonal and preserves norms", () => {
   }
 });
 
+test("handedness: a quarter-turn in (i,j) sends e_i to +e_j", () => {
+  // Pins the sign convention itself. Orthogonality, inverses and the
+  // shortcut-vs-matrix consistency are all invariant under transposing the
+  // convention; only an absolute image detects a flipped chirality (the
+  // drag direction and the verify quarter-turn both depend on it).
+  const image = mulMatVec(planeRotation(2, 0, 1, Math.PI / 2), [1, 0]);
+  assertClose(image[0], 0, 1e-12, "e_x image x");
+  assertClose(image[1], 1, 1e-12, "e_x image y");
+});
+
 test("rotation by theta then -theta is the identity", () => {
   const R1 = planeRotation(4, 1, 3, 1.1);
   const R2 = planeRotation(4, 1, 3, -1.1);
@@ -56,7 +66,8 @@ test("applyPlaneRotation equals explicit matrix multiplication", () => {
 });
 
 test("composeVelocities applies each active plane, skips omega=0", () => {
-  const Q0 = identity(4);
+  // A non-identity starting pose: the fold must build on Q0, not restart.
+  const Q0 = applyPlaneRotation(identity(4), 0, 2, 0.4);
   const velocities = [
     { plane: [0, 1], omega: 0.5 },
     { plane: [2, 3], omega: 0 },
@@ -65,12 +76,12 @@ test("composeVelocities applies each active plane, skips omega=0", () => {
   const dt = 0.1;
   const expected = mulMat(
     planeRotation(4, 0, 3, -0.025),
-    planeRotation(4, 0, 1, 0.05),
+    mulMat(planeRotation(4, 0, 1, 0.05), Q0),
   );
   assertMatrixClose(composeVelocities(Q0, velocities, dt), expected, 1e-12);
 });
 
-test("drift: 10000 small rotations, then orthonormalize -> QQt = I", () => {
+test("drift: 20000 small rotations, then orthonormalize -> QQt = I", () => {
   const n = 4;
   let Q = identity(n);
   for (let k = 0; k < 10000; k++) {
@@ -103,6 +114,18 @@ test("orthonormalize preserves orientation (det sign)", () => {
   );
   assert.ok(det(reflected) < 0, "negated row flips det sign");
   assertClose(det(orthonormalize(reflected)), -1, 1e-9, "det preserved at -1");
+});
+
+test("orthonormalize restores orthonormality from a visible perturbation", () => {
+  // The drift test's input is already orthonormal to ~1e-13, so it cannot
+  // distinguish MGS from a no-op. A 1e-2 perturbation can: only a genuine
+  // re-orthonormalization brings QQt back to I at 1e-12.
+  const R = planeRotation(4, 0, 3, 1.2);
+  const noisy = R.map((row, i) =>
+    row.map((x, j) => x + 1e-2 * Math.cos(7 * i + 3 * j)),
+  );
+  const Q = orthonormalize(noisy);
+  assertMatrixClose(mulMat(Q, transpose(Q)), identity(4), 1e-12);
 });
 
 test("orthonormalize throws on rank-deficient input", () => {

@@ -143,13 +143,16 @@ export function createScene(renderer) {
     }
     ctx.stroke();
 
-    // Fading trail behind the head.
+    // Fading trail behind the head. The trail may not exceed the cycle
+    // (len = 4 at n = 2), and head - k goes negative, so wrap positively.
+    const wrap = (i) => ((i % len) + len) % len;
+    const trail = Math.min(COMET_TRAIL, len - 1);
     const head = Math.floor(pos);
     const frac = pos - head;
-    for (let k = 0; k < COMET_TRAIL; k++) {
-      const from = screen[cycle[(head - k + len * 2) % len]];
-      const to = screen[cycle[(head - k + 1 + len * 2) % len]];
-      const fade = (1 - k / COMET_TRAIL) * 0.55;
+    for (let k = 0; k < trail; k++) {
+      const from = screen[cycle[wrap(head - k)]];
+      const to = screen[cycle[wrap(head - k + 1)]];
+      const fade = (1 - k / trail) * 0.55;
       ctx.strokeStyle = accent(fade);
       ctx.lineWidth = 1.6;
       ctx.beginPath();
