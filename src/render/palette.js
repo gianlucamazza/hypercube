@@ -33,9 +33,10 @@ export function temperature(t) {
 export function edgeStyle(depthT, warmT) {
   const presence = smoothstep(depthT);
   // The far floor stays clearly visible: depth reads as recession, but the
-  // inner cells must never dissolve entirely.
+  // inner cells must never dissolve entirely. (Alpha carries visibility;
+  // the width floor stays at 0.6 — wider far lines cost fps at n = 6.)
   const alpha = lerp(0.26, 0.92, presence);
-  const width = lerp(0.75, 2.0, presence);
+  const width = lerp(0.6, 2.0, presence);
   const [r, g, b] = warmT == null ? ICE : temperature(warmT);
   return {
     strokeStyle: `rgba(${r},${g},${b},${alpha.toFixed(3)})`,
