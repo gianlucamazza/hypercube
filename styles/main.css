@@ -5,8 +5,9 @@
   --void-core: #0b0b12;
   --ice: #c9d4e0;
   --amber: #e2c39a;
-  --whisper: rgba(180, 192, 208, 0.6);
-  --whisper-dim: rgba(180, 192, 208, 0.3);
+  --whisper: rgba(180, 192, 208, 0.72);
+  /* Dim, but still ~4.5:1 against the void: WCAG AA for the small chrome. */
+  --whisper-dim: rgba(180, 192, 208, 0.65);
   --hairline: rgba(180, 192, 208, 0.16);
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: system-ui, -apple-system, sans-serif;
@@ -180,6 +181,19 @@ button:focus-visible {
 /* Diagonal squares: the axis mirrors of B_n (the dots above are its planes) */
 .plane-dot.mirror {
   border-radius: 2px;
+}
+
+/* Touch: the 11px dots keep their look, but the finger gets a 24px target. */
+@media (pointer: coarse) {
+  .plane-dot::before {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+  }
+  #planes {
+    gap: 14px;
+  }
 }
 
 .plane-dot::after {

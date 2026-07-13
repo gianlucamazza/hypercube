@@ -4,6 +4,24 @@
   "description": "A contemplative, zero-dependency visualization of the n-dimensional hypercube",
   "type": "module",
   "license": "MIT",
+  "author": "Gianluca Mazza",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gianlucamazza/hypercube.git"
+  },
+  "homepage": "https://gianlucamazza.github.io/hypercube/",
+  "bugs": "https://github.com/gianlucamazza/hypercube/issues",
+  "keywords": [
+    "hypercube",
+    "tesseract",
+    "4d",
+    "geometry",
+    "visualization",
+    "canvas",
+    "schlegel",
+    "coxeter",
+    "gray-code"
+  ],
   "engines": {
     "node": ">=22"
   },

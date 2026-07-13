@@ -77,11 +77,17 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       b.dataset.name = name;
       b.setAttribute(
         "aria-label",
-        `rotate in the ${name} plane (double-click: exact quarter-turn)`,
+        `rotate in the ${name} plane (double-click or Shift+Enter: exact quarter-turn)`,
       );
       b.addEventListener("dblclick", () => {
         clearTimeout(clickTimer);
         actions.quarterTurn(key);
+      });
+      b.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.shiftKey) {
+          e.preventDefault(); // suppress the native click -> toggle
+          actions.quarterTurn(key);
+        }
       });
       b.style.gridRow = String(i + 1);
       b.style.gridColumn = String(j + 1);
@@ -170,7 +176,22 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
     else if (e.key === " ") {
       e.preventDefault();
       actions.togglePause();
-    }
+    } else if (e.key.startsWith("Arrow")) {
+      // Keyboard rotation, mirroring the drag: arrows drive the same
+      // screen-facing planes; Shift reaches the highest axis (n >= 4).
+      e.preventDefault();
+      const n = state.n;
+      const depthAxis = e.shiftKey && n >= 4 ? n - 1 : Math.min(2, n - 1);
+      const vAxis = Math.min(1, depthAxis - 1);
+      const STEP = 0.08;
+      if (e.key === "ArrowLeft") actions.rotateBy(0, depthAxis, -STEP);
+      else if (e.key === "ArrowRight") actions.rotateBy(0, depthAxis, STEP);
+      else if (e.key === "ArrowUp" && vAxis !== depthAxis)
+        actions.rotateBy(vAxis, depthAxis, STEP);
+      else if (e.key === "ArrowDown" && vAxis !== depthAxis)
+        actions.rotateBy(vAxis, depthAxis, -STEP);
+    } else if (e.key === "[") actions.dollyBy(1 / 1.08);
+    else if (e.key === "]") actions.dollyBy(1.08);
   });
 
   // --- Reflect state ----------------------------------------------------

@@ -1,8 +1,13 @@
 # hypercube
 
+[![test](https://github.com/gianlucamazza/hypercube/actions/workflows/test.yml/badge.svg)](https://github.com/gianlucamazza/hypercube/actions/workflows/test.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-8f83cf.svg)](LICENSE)
+
 A contemplative, zero-dependency visualization of the n-dimensional
 hypercube: its rotations, its symmetries, its projections — from the square
 to the 6-cube.
+
+**Live demo: <https://gianlucamazza.github.io/hypercube/>**
 
 ![the tesseract, mid-rotation, with the Gray-code comet](docs/screenshot.png)
 
@@ -21,19 +26,19 @@ Then open <http://localhost:8000>.
 
 ## Controls
 
-| Control                                                | Effect                                                                      |
-| ------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `− / +` or keys `2`–`6`                                | dimension                                                                   |
-| `solid · net` or `u`                                   | the object, or its unfolding (the Dalí cross for n = 4)                     |
-| `perspective · orthographic · schlegel` or `p / o / s` | projection (Schlegel adds translucent face veils)                           |
-| `stillness · isocline · tumble · within`               | motion presets                                                              |
-| grid, off-diagonal dots (bottom left)                  | toggle rotation in a C(n,2) plane; double-click: exact quarter-turn         |
-| grid, diagonal squares                                 | mirror an axis — one reflection of B_n, collapsing through the (n−1)-shadow |
-| drag                                                   | rotate the screen-facing planes                                             |
-| `Shift` + drag                                         | rotate against the highest axis (touch the 4th dimension)                   |
-| wheel, or pinch                                        | dolly the final perspective                                                 |
-| `Σ` (top right)                                        | element counts, symmetry order, and the Gray-code comet (`g`)               |
-| `Space`                                                | pause                                                                       |
+| Control                                                | Effect                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `− / +` or keys `2`–`6`                                | dimension                                                                      |
+| `solid · net` or `u`                                   | the object, or its unfolding (the Dalí cross for n = 4)                        |
+| `perspective · orthographic · schlegel` or `p / o / s` | projection (Schlegel adds translucent face veils)                              |
+| `stillness · isocline · tumble · within`               | motion presets                                                                 |
+| grid, off-diagonal dots (bottom left)                  | toggle rotation in a C(n,2) plane; double-click or `Shift+Enter`: quarter-turn |
+| grid, diagonal squares                                 | mirror an axis — one reflection of B_n, collapsing through the (n−1)-shadow    |
+| drag, or arrow keys                                    | rotate the screen-facing planes                                                |
+| `Shift` + drag, or `Shift` + arrows                    | rotate against the highest axis (touch the 4th dimension)                      |
+| wheel, pinch, or `[` / `]`                             | dolly the final perspective                                                    |
+| `Σ` (top right)                                        | element counts, symmetry order, and the Gray-code comet (`g`)                  |
+| `Space`                                                | pause                                                                          |
 
 A pose is shareable via URL:
 `?n=5&view=net&projection=schlegel&preset=within&gray=1`.
@@ -79,3 +84,7 @@ Gray code — is a theorem you can watch: a Hamiltonian cycle on Q_n, one bit
 at a time.
 
 See [docs/mathematics.md](docs/mathematics.md) for the constructions.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

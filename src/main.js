@@ -174,6 +174,11 @@ function sync() {
 ghost.textContent = String(state.n);
 actions.applyPreset("stillness");
 
+// Honor a reduced-motion preference turned on mid-session, not only at load.
+reducedMotion.addEventListener("change", (e) => {
+  if (e.matches && !state.paused) actions.togglePause();
+});
+
 // A pose is shareable: ?n=5&view=net&projection=schlegel&preset=isocline&gray=1
 const params = new URLSearchParams(location.search);
 if (params.has("preset")) actions.applyPreset(params.get("preset"));
