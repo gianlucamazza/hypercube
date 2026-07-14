@@ -86,7 +86,7 @@ export function createScene(renderer) {
 
     renderer.begin();
 
-    // Face veils, only where they explain: in the Schlegel diagram the
+    // Face veils, only where they explain: in the Schlegel-style view the
     // translucent fills give the nested cells their volume.
     if (mode === "schlegel" && geometry.faces.length > 0) {
       const faceDepth = (f) =>

@@ -5,13 +5,14 @@
 // Modes:
 //   perspective  - perspective division at every stage
 //   orthographic - drop coordinates above 3D, perspective only for 3D -> 2D
-//   schlegel     - perspective with the first-stage viewpoint just outside
-//                  one cell, so the near cell maps large and the far cell
-//                  nests inside it (cube-within-a-cube for n=4)
+//   schlegel     - at the frontal pose, a genuine Schlegel projection with
+//                  the first-stage viewpoint just outside a facet. During
+//                  free rotation it follows the cloud support continuously;
+//                  unless that support is a facet, this is Schlegel-style.
 //
 // Every perspective stage places its camera at
 //   D = max(base distance, max depth + CLIP_MARGIN * max(extent, 1))
-// except the Schlegel first stage, which sits just outside the cloud at
+// except the Schlegel-style first stage, which sits just outside the cloud at
 //   D = max depth + SCHLEGEL_MARGIN * max(extent, 1)
 // The base distance (1.2*sqrt(d), dollied on the final stage) sets the look;
 // the adaptive floor keeps the camera outside the point cloud. A fixed
@@ -27,14 +28,15 @@
 // Boundedness theorem (docs/mathematics.md, section 4). Unconditionally,
 // D - depth >= CLIP_MARGIN * max(extent, 1) > 0: every scale is finite and
 // nonzero. (Not, by itself, positive: a Schlegel cloud entirely at negative
-// depth would put D below zero.) When the input cloud contains a
-// sign-antipodal pair {x, -x}, induction over the stages gives more: the
-// pair's depths straddle zero, so maxDepth >= 0, D >= margin > 0, all
-// scales are positive and preserve coordinate signs — which hands the
-// straddle to the next stage — and maxDepth <= extent bounds each stage's
-// magnification by 1 + 1/CLIP_MARGIN. Every reachable cloud qualifies: the
-// hypercube and the net's central cell are antipodally symmetric, and
-// rotations and the mirror's axis scaling are linear and odd.
+// depth would put D below zero.) When the input cloud contains an opposite-
+// ray pair {alpha*x, -beta*x}, alpha,beta > 0, induction gives more: the
+// pair's depths straddle zero, so maxDepth >= 0, D >= margin > 0, all scales
+// are positive, and their generally unequal factors keep the two images on
+// opposite rays. This hands the straddle to the next stage, while
+// maxDepth <= extent bounds each stage's magnification by
+// 1 + 1/CLIP_MARGIN. Every reachable cloud qualifies: the hypercube and the
+// net's central cell contain exact antipodes initially, and rotations and the
+// mirror's axis scaling are linear and odd.
 
 export function perspectiveStep(v, distance) {
   const depth = v[v.length - 1];
@@ -55,11 +57,12 @@ export function defaultDistance(d) {
 
 // Margin between the point cloud and an adaptive camera, as a fraction of
 // the cloud's depth extent (floored at 1, the frontal cube's extent, so the
-// classic frontal images keep their exact proportions). Scaling the margin
-// with the cloud makes the cascade scale-invariant: a stage can magnify at
-// most (extent + margin) / margin ~ 3.9x no matter how large the incoming
-// points already are. For the Schlegel first stage the margin is the whole
-// viewpoint-to-cell distance (giving the classic ~4:1 nesting); for every
+// classic frontal images keep their exact proportions). Above unit extent,
+// scaling the margin with the cloud makes the adaptive term scale-invariant;
+// below it the floor deliberately is not. A stage can magnify at most
+// (extent + margin) / margin ~ 3.9x no matter how large the incoming points
+// already are. At the frontal Schlegel first stage the margin is the whole
+// viewpoint-to-facet distance (giving the classic ~4:1 nesting); for every
 // other stage it is only a safety floor beneath the base distance.
 export const SCHLEGEL_MARGIN = 0.35;
 export const CLIP_MARGIN = 0.35;

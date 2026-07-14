@@ -21,8 +21,8 @@ import { lcg, assertClose, det } from "./helpers.js";
 
 const MODES = ["perspective", "orthographic", "schlegel"];
 const DOLLYS = [0.5, 1, 4];
-// Two-tier guarantee. Theorem: for sign-antipodal input clouds (every
-// reachable one) each stage scale is positive and at most
+// Two-tier guarantee. Theorem: for clouds containing an opposite-ray pair
+// (every reachable one) each stage scale is positive and at most
 // (extent + margin) / margin = 1.35/0.35, so projections are finite and
 // sign-preserving (asserted exactly below).
 // Empirical regression ceiling: max projected radius measured at 34.89
@@ -87,7 +87,7 @@ function assertBounded(vertices, opts, label) {
       `${label}: non-finite point`,
     );
   // The boundedness theorem, stage by stage: every reachable cloud contains
-  // a sign-antipodal pair, so the depths straddle zero (the hypothesis); the
+  // an opposite-ray pair, so the depths straddle zero (the hypothesis); the
   // camera stays at least CLIP_MARGIN outside the cloud (unconditional); and
   // the worst scale never exceeds 1 + 1/CLIP_MARGIN (the conclusion).
   for (const st of stages) {
@@ -169,8 +169,8 @@ test("projection is finite and bounded for random poses (seeded sweep)", () => {
   }
 });
 
-// D2 — Schlegel n=4 under plain mouse drag (planes (0,2) and (1,2)): a
-// near-cell corner can face the camera. Pre-fix this reached radius ~13,698.
+// D2 — Schlegel-style n=4 under plain mouse drag (planes (0,2) and (1,2)):
+// a supporting corner can face the camera. Pre-fix this reached ~13,698.
 test("witness: Schlegel n=4 stays bounded under the drag planes", () => {
   const { vertices } = hypercube(4);
   const STEPS = 60;
@@ -187,14 +187,13 @@ test("witness: Schlegel n=4 stays bounded under the drag planes", () => {
   }
 });
 
-// D3 — Schlegel n=5/6: the first stage magnifies a facet corner past the
+// D3 — Schlegel-style n=5/6: the first stage magnifies a support point past the
 // fixed distance of the NEXT stage (2.43 > 2.4 pre-fix), dolly-independent.
 test("witness: Schlegel n=5,6 facet corner aligned to the next depth axis", () => {
   for (const n of [5, 6]) {
     const diagonal = new Array(n).fill(1);
-    // Zero the consumed coordinate: the Schlegel outer cell is dynamic
-    // (whichever cell has max depth in the current pose); this keeps the
-    // corner on the near cell's boundary.
+    // Zero the consumed coordinate before alignment; this places a corner on
+    // the first stage's supporting feature.
     diagonal[n - 1] = 0;
     const Q = alignToAxis(n, diagonal, n - 2);
     const rotated = hypercube(n).vertices.map((v) => mulMatVec(Q, v));
@@ -278,7 +277,10 @@ function worstChain(n, dolly) {
 test("witness: perspective worst-chain point at the pole", () => {
   for (const n of [4, 5, 6]) {
     for (const dolly of [0.5, 1]) {
-      const cloud = [worstChain(n, dolly), new Array(n).fill(0)];
+      const witness = worstChain(n, dolly);
+      // Include its exact antipode so this synthetic stress cloud satisfies
+      // the same opposite-ray hypothesis as every app-reachable geometry.
+      const cloud = [witness, witness.map((x) => -x)];
       assertBounded(
         cloud,
         { mode: "perspective", dolly },
@@ -290,8 +292,8 @@ test("witness: perspective worst-chain point at the pole", () => {
 
 // D6 — mirror collapse: the mirror animation scales one object axis through
 // zero, a rank-deficient cloud the seeded sweep never reaches. Scaling is
-// linear and odd, so the sign-antipodal hypothesis survives and the theorem
-// must hold at every s, including the flat instant s = 0.
+// linear and odd, so an exact antipodal pair enters the cascade and its
+// opposite-ray relation survives; the theorem holds even at the flat s = 0.
 test("witness: mirror collapse stays bounded and straddles zero", () => {
   for (let n = 2; n <= 6; n++) {
     const { vertices } = hypercube(n);

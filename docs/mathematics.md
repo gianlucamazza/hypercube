@@ -54,11 +54,20 @@ Plane rotations in general do **not** commute, so a pose cannot be stored
 as a vector of angles: the same angles applied in a different order give a
 different orientation, and a mouse drag composes arbitrary incremental
 rotations onto the current pose. Orientation is therefore an accumulated
-orthogonal matrix `Q ∈ SO(n)`, updated per frame by
+orthogonal matrix `Q ∈ SO(n)`. For simultaneous constant angular velocities,
+form the skew-symmetric generator `Ω` whose `(i,j)` plane block is `ωᵢⱼJ₂`;
+the exact continuous flow over one frame is
 
-    Q ← R(i, j, ω·dt) · Q
+    Q ← exp(dt·Ω) · Q
 
-which touches only rows `i` and `j` (`applyPlaneRotation`, O(n²)).
+The implementation evaluates the matrix exponential by scaling-and-squaring
+with a convergent Taylor series (matrices are at most 6×6). This matters for
+intersecting planes: sequentially applying their small rotations would be a
+first-order Lie–Trotter approximation with an order-dependent commutator error
+`O(dt²)`, whereas a simultaneous physical velocity field has no such ordering.
+For interaction that requests one finite plane turn, `applyPlaneRotation`
+still touches only rows `i` and `j` in `O(n²)`.
+
 Floating-point drift slowly de-orthogonalizes `Q`; a modified Gram–Schmidt
 pass every ~300 frames restores `Q Qᵀ = I` (the drift test composes 20 000
 rotations — two per simulated frame for 10 000 frames — and checks exactly
@@ -73,7 +82,9 @@ plane rotations (each `det = +1`), hence `det Q = +1` through every
 cleanup. The tests pin both directions: a drifted rotation comes out at
 `det = +1`, the same matrix with a row negated at `det = −1`
 (`orthonormalize preserves orientation` in `test/rotation.test.js`), and
-the drift test asserts `det(Q) = 1` after 20 000 compositions.
+the drift test asserts `det(Q) = 1` after 20 000 compositions. Separate tests
+pin the exponential flow's order independence, semigroup law, one-plane
+analytic solution, and equal-angle isoclinic double rotation.
 
 ## 4. Projection — the cascade nD → 3D → 2D
 
@@ -94,9 +105,12 @@ The three modes differ only in how the stages are configured:
 - **orthographic** — drop coordinates above 3D, keep perspective for
   3D→2D. A fully orthographic image reads flat; the mixed form is legible
   while still honest about the higher dimensions.
-- **schlegel** — perspective from a viewpoint just outside one cell. The
-  near cell projects large, the far cell nests inside it: the classic
-  cube-within-a-cube diagram of the tesseract.
+- **schlegel** — in the frontal pose, perspective from a viewpoint just
+  outside one facet: a genuine Schlegel projection whose near cell surrounds
+  the far one, giving the classic cube-within-a-cube tesseract diagram. Under
+  a free rotation the camera continues to follow the cloud's supporting
+  feature for visual continuity; except when that feature is a facet, this is
+  a Schlegel-style perspective rather than, strictly, a Schlegel diagram.
 
 No fixed camera distance is safe in the cascade. Each perspective stage
 multiplies the remaining coordinates by `D / (D − depth)`, so a later stage
@@ -109,42 +123,45 @@ stage therefore rides its camera adaptively:
 
     D = max(base distance, max depth + 0.35 · max(depth extent, 1))
 
-except the Schlegel first stage, whose entire point is to sit _below_ the
+except the Schlegel-style first stage, whose entire point is to sit _below_ the
 base distance, just outside the cloud: `D = max depth + 0.35 · max(depth
 extent, 1)`.
 
-The margin proportional to the cloud's depth extent makes the cascade
-scale-invariant, and the floor at extent 1 (the frontal cube's extent)
-keeps all classic frontal images, including the Schlegel nesting ratio,
-exactly as a fixed camera would draw them.
+Above unit depth extent, the proportional margin makes the adaptive safety
+term scale-invariant. Below it, the explicit floor at extent 1 (the frontal
+cube's extent) deliberately breaks scale invariance to keep all classic
+frontal images, including the Schlegel nesting ratio, exactly as a fixed
+camera would draw them.
 
 **Boundedness theorem.** (i) Unconditionally, every vertex at every
 perspective stage has denominator `D − depth ≥ 0.35 · max(extent, 1) > 0`
 (up to float rounding), so all scales are finite and nonzero. This alone
 does not make them positive: a Schlegel cloud lying entirely at negative
 depth would put the camera itself at `D < 0`. (ii) If the input cloud
-contains a _sign-antipodal pair_ `{x, −x}`, then every scale is positive
-and every stage magnifies by at most `1 + 1/0.35 ≈ 3.86`, no matter how
-large the incoming points are.
+contains an _opposite-ray pair_ `{αx, −βx}` with `α, β > 0`, then every
+scale is positive and every stage magnifies by at most
+`1 + 1/0.35 ≈ 3.86`, no matter how large the incoming points are. Exact
+antipodes `{x, −x}` are the special case `α = β = 1`.
 
 Proof of (ii), by induction on the stages. Suppose the stage's input
-contains a sign-antipodal pair. Its two depths are never both strictly
-positive nor both strictly negative, so `minDepth ≤ 0 ≤ maxDepth`. Then
+contains an opposite-ray pair. Its two depths have opposite signs (or are
+both zero), so `minDepth ≤ 0 ≤ maxDepth`. Then
 `D ≥ maxDepth + margin ≥ margin > 0` (the non-Schlegel stages also have
 `D ≥ base > 0`), so every scale `D/(D − depth) ≥ D/(D − minDepth) > 0`:
-positive scales multiply coordinates without changing their signs, and the
-pair stays sign-antipodal into the next stage's input — the induction
-step. For the bound, `maxDepth ≤ maxDepth − minDepth = extent`, so the
+positive perspective scales multiply the two points by generally unequal
+positive factors, so their images remain on opposite rays — the induction
+step. An orthographic step preserves the relation as well. For the bound,
+`maxDepth ≤ maxDepth − minDepth = extent`, so the
 worst scale is
 
     D / (D − maxDepth) ≤ (maxDepth + margin) / margin
                        ≤ 1 + extent / (0.35 · max(extent, 1)) ≤ 1 + 1/0.35
 
 The hypothesis is discharged for every cloud the app can produce: the
-hypercube and the net's central cell are antipodally symmetric vertex
-sets, and everything applied to them before projection — the rotation `Q`
-and the mirror animation's axis scaling — is linear and odd, so an
-antipodal pair survives into every stage's input. The property tests in
+hypercube and the net's central cell contain exact antipodes, and everything
+applied before projection — the rotation `Q` and the mirror animation's axis
+scaling — is linear and odd. Thus an exact antipodal pair enters the cascade,
+and the opposite-ray relation survives every stage. The property tests in
 `test/projection.property.test.js` assert straddling, the extent-scaled
 camera floor, and the magnification bound (from both sides) at every stage
 of 600 seeded poses — each projected under all three modes and three dolly

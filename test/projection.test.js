@@ -30,6 +30,16 @@ test("perspectiveStep preserves x/y ratios", () => {
   assertClose(p[0] / p[1], 3 / 5);
 });
 
+test("perspective maps exact antipodes to opposite rays, not exact antipodes", () => {
+  const near = perspectiveStep([1, 2, 0.5], 2).p;
+  const far = perspectiveStep([-1, -2, -0.5], 2).p;
+  // Collinear and oppositely directed: the invariant used by the cascade
+  // boundedness proof. Unequal perspective factors change their magnitudes.
+  assertClose(near[0] * far[1] - near[1] * far[0], 0, 1e-12);
+  assert.ok(near[0] * far[0] + near[1] * far[1] < 0);
+  assert.notEqual(Math.hypot(...near), Math.hypot(...far));
+});
+
 test("project returns 2-vectors and correct depth arrays for n = 2..6", () => {
   for (let n = 2; n <= 6; n++) {
     const { vertices } = hypercube(n);

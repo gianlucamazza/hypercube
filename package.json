@@ -1,6 +1,6 @@
 {
   "name": "hypercube",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A contemplative, zero-dependency visualization of the n-dimensional hypercube",
   "type": "module",
   "license": "MIT",

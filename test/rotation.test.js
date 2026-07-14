@@ -65,20 +65,64 @@ test("applyPlaneRotation equals explicit matrix multiplication", () => {
   assertMatrixClose(viaShortcut, viaMatrix, 1e-12);
 });
 
-test("composeVelocities applies each active plane, skips omega=0", () => {
-  // A non-identity starting pose: the fold must build on Q0, not restart.
+test("composeVelocities is exact for one active plane and skips omega=0", () => {
+  // A non-identity starting pose: integration must build on Q0, not restart.
   const Q0 = applyPlaneRotation(identity(4), 0, 2, 0.4);
   const velocities = [
     { plane: [0, 1], omega: 0.5 },
     { plane: [2, 3], omega: 0 },
-    { plane: [0, 3], omega: -0.25 },
   ];
   const dt = 0.1;
-  const expected = mulMat(
-    planeRotation(4, 0, 3, -0.025),
-    mulMat(planeRotation(4, 0, 1, 0.05), Q0),
-  );
+  const expected = mulMat(planeRotation(4, 0, 1, 0.05), Q0);
   assertMatrixClose(composeVelocities(Q0, velocities, dt), expected, 1e-12);
+});
+
+test("simultaneous velocity integration is independent of iterable order", () => {
+  const Q0 = planeRotation(4, 1, 2, 0.37);
+  const velocities = [
+    { plane: [0, 1], omega: 0.5 },
+    { plane: [0, 3], omega: -0.25 },
+    { plane: [2, 3], omega: 0.31 },
+  ];
+  const forward = composeVelocities(Q0, velocities, 0.4);
+  const reverse = composeVelocities(Q0, velocities.toReversed(), 0.4);
+  assertMatrixClose(forward, reverse, 1e-14);
+});
+
+test("constant simultaneous flow satisfies the semigroup law", () => {
+  const velocities = [
+    { plane: [0, 1], omega: 0.21 },
+    { plane: [1, 3], omega: 0.134 },
+    { plane: [0, 2], omega: 0.083 },
+  ];
+  const Q0 = planeRotation(4, 2, 3, -0.7);
+  const whole = composeVelocities(Q0, velocities, 0.8);
+  const halves = composeVelocities(
+    composeVelocities(Q0, velocities, 0.4),
+    velocities,
+    0.4,
+  );
+  assertMatrixClose(whole, halves, 2e-15);
+});
+
+test("equal disjoint velocities give the analytic isoclinic double rotation", () => {
+  const omega = 0.22;
+  const dt = 0.73;
+  const actual = composeVelocities(
+    identity(4),
+    [
+      { plane: [0, 1], omega },
+      { plane: [2, 3], omega },
+    ],
+    dt,
+  );
+  const expected = mulMat(
+    planeRotation(4, 2, 3, omega * dt),
+    planeRotation(4, 0, 1, omega * dt),
+  );
+  assertMatrixClose(actual, expected, 1e-12);
+  assertMatrixClose(mulMat(actual, transpose(actual)), identity(4), 1e-12);
+  assertClose(det(actual), 1, 1e-12);
 });
 
 test("drift: 20000 small rotations, then orthonormalize -> QQt = I", () => {

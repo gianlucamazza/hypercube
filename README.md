@@ -55,7 +55,7 @@ src/core/             pure math — no DOM
   combinatorics.js    counts, Gray code, rotation planes, |B_n| = 2^n·n!
   matrix.js           n×n helpers, Gram–Schmidt
   rotation.js         C(n,2) plane rotations on an accumulated Q ∈ SO(n)
-  projection.js       perspective / orthographic / Schlegel cascade to 2D
+  projection.js       perspective / orthographic / Schlegel-style cascade to 2D
 src/render/           Canvas 2D wireframe: depth fade, w-temperature, comet
 src/ui/               controls, structure panel, motion presets
 test/                 node --test suite (core + a canvas-stubbed scene)

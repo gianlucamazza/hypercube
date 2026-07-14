@@ -23,7 +23,7 @@ export const PRESETS = [
   },
   {
     name: "tumble",
-    note: "three incommensurate speeds — the pose never repeats",
+    note: "three unequal coupled turns — a slow, aperiodic-looking drift",
     velocities(n) {
       const v = [{ plane: [0, 1], omega: 0.21 }];
       if (n >= 3) v.push({ plane: [1, n - 1], omega: 0.134 });
@@ -33,7 +33,7 @@ export const PRESETS = [
   },
   {
     name: "within",
-    note: "cells exchanging places, seen from just outside one of them",
+    note: "nested cells trading prominence in a Schlegel-style view",
     projection: "schlegel",
     velocities(n) {
       return [{ plane: [n - 2, n - 1], omega: 0.18 }];

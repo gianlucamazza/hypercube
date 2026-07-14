@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-07-14
+
+### Changed
+
+- Simultaneous plane velocities now integrate as the exact, order-independent
+  flow `exp(dt·Ω)`, including noncommuting (intersecting) planes, replacing the
+  sequential first-order approximation. Equal disjoint velocities give an exact
+  isoclinic double rotation.
+- Terminology precision. The projection boundedness theorem is stated under the
+  weaker **opposite-ray** hypothesis (`{αx, −βx}`, exact antipodes as the
+  α = β = 1 case). The `schlegel` mode is described as **Schlegel-style** — a
+  genuine Schlegel diagram only in the frontal facet pose, a support-following
+  perspective under free rotation. Motion-preset notes (`tumble`, `within`)
+  reworded for accuracy.
+
 ## [0.1.0] — 2026-07-13
 
 First public release.
@@ -36,4 +51,5 @@ First public release.
   headless Chromium; `tools/shots.mjs` visual QA matrix; CI runs test,
   verify, and deploys to GitHub Pages.
 
+[0.1.1]: https://github.com/gianlucamazza/hypercube/releases/tag/v0.1.1
 [0.1.0]: https://github.com/gianlucamazza/hypercube/releases/tag/v0.1.0
