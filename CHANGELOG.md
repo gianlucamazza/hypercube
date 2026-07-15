@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format follows
   cycle, placement for `local` vs `local-floor`, and a re-entry guard while
   the session is starting.
 
+### Changed
+
+- VR comfort knobs centralized in `src/render/xr-config.js`, overridable at
+  enter-VR via URL query (`?grab=…&radius=…`). Field checklist in `docs/vr.md`.
+
 ## [0.1.1] — 2026-07-14
 
 ### Changed

@@ -66,9 +66,10 @@ export function faceStyle(depthT, warmT) {
 }
 
 // Presence → half-width in metres for the XR thick-line path.
-export function edgeHalfWidth(depthT) {
+// Defaults match xr-config; pass min/max to honour field overrides.
+export function edgeHalfWidth(depthT, min = 0.0009, max = 0.0024) {
   const presence = smoothstep(depthT);
-  return lerp(0.0009, 0.0024, presence); // ~1.8–4.8 mm diameter
+  return lerp(min, max, presence); // ~1.8–4.8 mm diameter at defaults
 }
 
 // The Gray-code comet and its trail.

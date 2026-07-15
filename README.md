@@ -83,6 +83,7 @@ src/render/           Canvas 2D wireframe + optional WebXR stereo path
   renderer.js         Canvas 2D surface
   scene.js            rotate → project → stroke
   palette.js          depth presence + w-temperature
+  xr-config.js        VR comfort knobs + URL field overrides
   xr-session.js       WebXR enter/exit
   xr-input.js         grab FSM, sticks, ray pick (pure, tested)
   xr-ui.js            diegetic B_n lattice + idle fade

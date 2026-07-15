@@ -1,14 +1,28 @@
 // Pure XR input FSM: sticks, grip-grab deltas, button edges, dual-grip recenter.
 // No DOM / WebGL — unit-tested. The host feeds raw controller snapshots each
 // frame and receives actions to dispatch onto the shared app state.
+// Comfort knobs: src/render/xr-config.js (URL-overridable).
 
-export const DEADZONE = 0.12;
-export const STICK_ROTATE = 1.6; // rad/s at full deflection
-export const STICK_DOLLY = 1.4;
-export const GRAB_SENS = 2.8; // rad per metre of controller travel
-export const MAX_DTHETA = 0.12; // rad/frame clamp (comfort)
-export const RECENTER_HOLD_MS = 1000;
-export const DOUBLE_MS = 320;
+import {
+  XR_DEFAULTS,
+  DEADZONE,
+  STICK_ROTATE,
+  STICK_DOLLY,
+  GRAB_SENS,
+  MAX_DTHETA,
+  RECENTER_HOLD_MS,
+  DOUBLE_MS,
+} from "./xr-config.js";
+
+export {
+  DEADZONE,
+  STICK_ROTATE,
+  STICK_DOLLY,
+  GRAB_SENS,
+  MAX_DTHETA,
+  RECENTER_HOLD_MS,
+  DOUBLE_MS,
+};
 
 export function deadzone(v, z = DEADZONE) {
   return Math.abs(v) < z ? 0 : v;
@@ -18,16 +32,17 @@ export function edge(next, prev, i) {
   return !!(next[i] && !prev[i]);
 }
 
-export function clampTheta(t) {
-  if (t > MAX_DTHETA) return MAX_DTHETA;
-  if (t < -MAX_DTHETA) return -MAX_DTHETA;
+export function clampTheta(t, max = MAX_DTHETA) {
+  if (t > max) return max;
+  if (t < -max) return -max;
   return t;
 }
 
 // Build a per-frame controller snapshot from WebXR inputSources.
 // frame + refSpace are optional: without poses, grab deltas are zero.
-export function sampleControllers(session, frame, refSpace) {
+export function sampleControllers(session, frame, refSpace, cfg = XR_DEFAULTS) {
   const list = [];
+  const dz = cfg.deadzone ?? DEADZONE;
   for (const source of session.inputSources) {
     const gp = source.gamepad;
     if (!gp) continue;
@@ -40,8 +55,8 @@ export function sampleControllers(session, frame, refSpace) {
     if (gp.axes && gp.axes.length >= 2) {
       const ax = gp.axes.length >= 4 ? 2 : 0;
       const ay = gp.axes.length >= 4 ? 3 : 1;
-      stickX = deadzone(gp.axes[ax] || 0);
-      stickY = deadzone(gp.axes[ay] || 0);
+      stickX = deadzone(gp.axes[ax] || 0, dz);
+      stickY = deadzone(gp.axes[ay] || 0, dz);
     }
     let pos = null;
     let dir = null;
@@ -83,7 +98,7 @@ export function sampleControllers(session, frame, refSpace) {
   return list;
 }
 
-export function createXrInput() {
+export function createXrInput(initialConfig = XR_DEFAULTS) {
   /** @type {Map<string, boolean[]>} */
   let prevButtons = new Map();
   /** @type {Map<string, number[]|null>} */
@@ -91,6 +106,11 @@ export function createXrInput() {
   let bothGripsSince = null;
   let lastTriggerAt = 0;
   let lastTriggerId = null;
+  let cfg = { ...XR_DEFAULTS, ...initialConfig };
+
+  function setConfig(next) {
+    cfg = { ...XR_DEFAULTS, ...next };
+  }
 
   function reset() {
     prevButtons = new Map();
@@ -109,6 +129,13 @@ export function createXrInput() {
    * @returns gestures for the host to apply
    */
   function step({ controllers, dt, now, n }) {
+    const stickRotate = cfg.stickRotate;
+    const stickDolly = cfg.stickDolly;
+    const grabSens = cfg.grabSens;
+    const maxD = cfg.maxDTheta;
+    const recenterHold = cfg.recenterHoldMs;
+    const doubleMs = cfg.doubleMs;
+
     const out = {
       rotate: [], // { i, j, theta }
       dollyFactor: 1,
@@ -148,13 +175,13 @@ export function createXrInput() {
           out.rotate.push({
             i: 0,
             j: depthAxis,
-            theta: clampTheta(dx * STICK_ROTATE * dt),
+            theta: clampTheta(dx * stickRotate * dt, maxD),
           });
         if (dy && vAxis !== depthAxis)
           out.rotate.push({
             i: vAxis,
             j: depthAxis,
-            theta: clampTheta(-dy * STICK_ROTATE * dt),
+            theta: clampTheta(-dy * stickRotate * dt, maxD),
           });
       }
       if (edgeButtons(dominant, 3)) {
@@ -166,7 +193,7 @@ export function createXrInput() {
     if (offhand) {
       if (offhand.stickY) {
         out.wake = true;
-        out.dollyFactor *= Math.exp(-offhand.stickY * STICK_DOLLY * dt);
+        out.dollyFactor *= Math.exp(-offhand.stickY * stickDolly * dt);
       }
       if (offhand.stickX && n >= 4) {
         out.wake = true;
@@ -174,14 +201,9 @@ export function createXrInput() {
         out.rotate.push({
           i: 0,
           j: n - 1,
-          theta: clampTheta(offhand.stickX * STICK_ROTATE * dt),
+          theta: clampTheta(offhand.stickX * stickRotate * dt, maxD),
         });
       }
-    } else if (dominant && !offhand) {
-      // Single controller: stick Y also dollies when no second hand.
-      // Prefer rotate on Y from dominant; dolly only if |stickY| and no rotate
-      // conflict — use stick Y for rotate (already), dolly via offhand only.
-      // With one controller, map nothing extra: grab + stick rotate is enough.
     }
 
     // --- Grip grab --------------------------------------------------------
@@ -202,18 +224,18 @@ export function createXrInput() {
           const isOffhand = offhand && c.id === offhand.id;
           if (isOffhand && n >= 4) {
             // Off-hand: travel turns against the highest axis (Shift+drag).
-            const th = clampTheta(ddx * GRAB_SENS);
+            const th = clampTheta(ddx * grabSens, maxD);
             if (th) out.rotate.push({ i: 0, j: n - 1, theta: th });
-            const th2 = clampTheta(-ddy * GRAB_SENS);
+            const th2 = clampTheta(-ddy * grabSens, maxD);
             if (th2) out.rotate.push({ i: 1, j: n - 1, theta: th2 });
           } else {
             // Dominant / sole controller: screen-facing planes.
             const depthAxis = Math.min(2, n - 1);
             const vAxis = Math.min(1, depthAxis - 1);
-            const th = clampTheta(ddx * GRAB_SENS);
+            const th = clampTheta(ddx * grabSens, maxD);
             if (th) out.rotate.push({ i: 0, j: depthAxis, theta: th });
             if (vAxis !== depthAxis) {
-              const thv = clampTheta(-ddy * GRAB_SENS);
+              const thv = clampTheta(-ddy * grabSens, maxD);
               if (thv) out.rotate.push({ i: vAxis, j: depthAxis, theta: thv });
             }
           }
@@ -228,7 +250,7 @@ export function createXrInput() {
     if (gripsDown >= 2) {
       out.wake = true;
       if (bothGripsSince == null) bothGripsSince = now;
-      else if (now - bothGripsSince >= RECENTER_HOLD_MS) {
+      else if (now - bothGripsSince >= recenterHold) {
         out.recenter = true;
         bothGripsSince = now + 1e9; // fire once until release
       }
@@ -280,7 +302,7 @@ export function createXrInput() {
       const prev = prevButtons.get(c.id) || [];
       if (edge(c.buttons, prev, 0)) {
         const dbl =
-          lastTriggerId === c.id && now - lastTriggerAt < DOUBLE_MS;
+          lastTriggerId === c.id && now - lastTriggerAt < doubleMs;
         lastTriggerAt = now;
         lastTriggerId = c.id;
         // Host combines with ray hit; expose double flag on matching ray.
@@ -302,7 +324,7 @@ export function createXrInput() {
     return edge(c.buttons, prev, i);
   }
 
-  return { step, reset, sampleControllers };
+  return { step, reset, setConfig, sampleControllers };
 }
 
 // Ray vs sphere hit; returns distance or null.

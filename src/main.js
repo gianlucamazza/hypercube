@@ -20,6 +20,7 @@ import {
   pickLattice,
 } from "./render/xr-input.js";
 import { buildLatticeTargets, createXrUiChrome } from "./render/xr-ui.js";
+import { resolveXrConfig } from "./render/xr-config.js";
 import { initControls } from "./ui/controls.js";
 import { initPanel } from "./ui/panel.js";
 import { PRESETS, presetByName } from "./ui/presets.js";
@@ -299,7 +300,8 @@ requestAnimationFrame(frame);
 
 const xrInput = createXrInput();
 const xrChrome = createXrUiChrome();
-let xrWorldOffset = defaultWorldOffset(true);
+let xrConfig = resolveXrConfig();
+let xrWorldOffset = defaultWorldOffset(true, xrConfig);
 const PROJECTIONS = ["perspective", "orthographic", "schlegel"];
 const HINT_KEY = "hypercube-vr-hinted";
 
@@ -320,14 +322,20 @@ async function startVr() {
   xrStarting = true;
   refreshVrButton();
   try {
-    if (!xrRenderer) xrRenderer = createXrRenderer();
+    // Field tuning: ?grab=3.2&radius=0.5&… — see docs/vr.md
+    xrConfig = resolveXrConfig(location.search);
+    if (!xrRenderer) xrRenderer = createXrRenderer(xrConfig);
+    else xrRenderer.setConfig(xrConfig);
+    xrInput.setConfig(xrConfig);
+    xrChrome.setConfig(xrConfig);
+
     const { session, refSpace, floorRelative } = await enterImmersiveVr(
       xrRenderer.gl,
     );
     xrSession = session;
     xrRefSpace = refSpace;
     xrFloorRelative = floorRelative;
-    xrWorldOffset = defaultWorldOffset(floorRelative);
+    xrWorldOffset = defaultWorldOffset(floorRelative, xrConfig);
     xrInput.reset();
     xrChrome.wake();
     xrRenderer.beginSession(performance.now());
@@ -365,7 +373,12 @@ async function startVr() {
       const dt = simulate(time);
       const now = performance.now();
 
-      const controllers = sampleControllers(xrSession, xrFrame, xrRefSpace);
+      const controllers = sampleControllers(
+        xrSession,
+        xrFrame,
+        xrRefSpace,
+        xrConfig,
+      );
       const gesture = xrInput.step({
         controllers,
         dt,
@@ -385,6 +398,7 @@ async function startVr() {
           xrWorldOffset = worldOffsetFromHead(
             viewer.transform.matrix,
             xrFloorRelative,
+            xrConfig,
           );
         }
       }
@@ -395,7 +409,12 @@ async function startVr() {
 
       // Lattice in object-relative metres (renderer world matrix places it).
       const origin = [xrWorldOffset.x, xrWorldOffset.y, xrWorldOffset.z];
-      const absTargets = buildLatticeTargets(state.n, origin, state);
+      const absTargets = buildLatticeTargets(
+        state.n,
+        origin,
+        state,
+        xrConfig,
+      );
       const relTargets = absTargets.map((t) => ({
         ...t,
         pos: [
@@ -416,7 +435,11 @@ async function startVr() {
         length: 1.2,
       }));
 
-      const hit = pickLattice(relRays, relTargets);
+      const hit = pickLattice(
+        relRays,
+        relTargets,
+        xrConfig.latticeHitR * 1.15,
+      );
       let hoverKey = null;
       if (hit) {
         hoverKey =

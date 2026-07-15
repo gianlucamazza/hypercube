@@ -3,26 +3,31 @@
 // renderer's job. No text atlas — circles (planes) and squares (mirrors).
 
 import { rotationPlanes } from "../core/combinatorics.js";
+import {
+  XR_DEFAULTS,
+  LATTICE_SPACING,
+  LATTICE_HIT_R,
+  LATTICE_OFFSET,
+  IDLE_MS,
+} from "./xr-config.js";
 
-export const LATTICE_SPACING = 0.032;
-export const LATTICE_HIT_R = 0.016;
-export const LATTICE_OFFSET = [-0.55, 0.05, 0]; // metres relative to object centre
-export const IDLE_MS = 3000;
+export { LATTICE_SPACING, LATTICE_HIT_R, LATTICE_OFFSET, IDLE_MS };
 
 /**
  * Build world-space targets for the B_n grid.
  * @param {number} n
  * @param {number[]} objectOrigin world position of the hypercube centre
  * @param {object} state { view, velocities }
- * @returns {Array<{ kind:'plane'|'mirror', key?:string, axis?:number, pos:number[], active:boolean }>}
+ * @param {object} [cfg]
  */
-export function buildLatticeTargets(n, objectOrigin, state) {
+export function buildLatticeTargets(n, objectOrigin, state, cfg = XR_DEFAULTS) {
   const [ox, oy, oz] = objectOrigin;
-  const [lx, ly, lz] = LATTICE_OFFSET;
+  const lx = cfg.latticeOffsetX ?? LATTICE_OFFSET[0];
+  const ly = cfg.latticeOffsetY ?? LATTICE_OFFSET[1];
+  const lz = cfg.latticeOffsetZ ?? LATTICE_OFFSET[2];
   const targets = [];
   const planes = rotationPlanes(n);
-  // Lay out as an upper-triangular visual matching the 2D grid: row i, col j.
-  const cell = LATTICE_SPACING;
+  const cell = cfg.latticeSpacing ?? LATTICE_SPACING;
   const originX = ox + lx - ((n - 1) * cell) / 2;
   const originY = oy + ly + ((n - 1) * cell) / 2;
   const z = oz + lz;
@@ -49,16 +54,21 @@ export function buildLatticeTargets(n, objectOrigin, state) {
   return targets;
 }
 
-export function createXrUiChrome() {
+export function createXrUiChrome(cfg = XR_DEFAULTS) {
   let lastInput = performance.now();
   let opacity = 1;
+  let idleMs = cfg.idleMs ?? IDLE_MS;
+
+  function setConfig(next) {
+    idleMs = next.idleMs ?? IDLE_MS;
+  }
 
   function wake(now = performance.now()) {
     lastInput = now;
   }
 
   function update(now = performance.now()) {
-    const idle = now - lastInput > IDLE_MS;
+    const idle = now - lastInput > idleMs;
     const target = idle ? 0 : 1;
     // Smooth fade matching the 2D chrome dissolve.
     opacity += (target - opacity) * (idle ? 0.08 : 0.2);
@@ -71,5 +81,5 @@ export function createXrUiChrome() {
     return opacity;
   }
 
-  return { wake, update, getOpacity };
+  return { wake, update, getOpacity, setConfig };
 }

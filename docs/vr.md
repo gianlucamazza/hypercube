@@ -53,9 +53,49 @@ squares are the n axis mirrors (hidden in net view).
 ## Architecture
 
 ```
+src/render/xr-config.js    comfort knobs + URL overrides
 src/render/xr-session.js   enter/exit, reference space
 src/render/xr-input.js     pure FSM (unit-tested)
 src/render/xr-ui.js        B_n lattice layout + idle fade
 src/render/xr-renderer.js  thick lines, veils, comet, lattice draw
 src/core/projection.js     stopAt: 3 intermediate cloud
 ```
+
+## Field tuning (Quest checklist)
+
+Defaults live in `src/render/xr-config.js`. On a headset you can override without
+rebuild via query string (parsed at **enter vr**):
+
+```
+https://gianlucamazza.github.io/hypercube/?grab=3.2&radius=0.5&deadzone=0.15
+```
+
+| Query | Config key | Default | Role |
+| --- | --- | --- | --- |
+| `grab` | `grabSens` | 2.8 | rad per metre grip travel |
+| `rotate` | `stickRotate` | 1.6 | stick orbit rad/s |
+| `dolly` | `stickDolly` | 1.4 | stick dolly rate |
+| `deadzone` | `deadzone` | 0.12 | stick deadzone |
+| `maxdtheta` | `maxDTheta` | 0.12 | rad/frame clamp (comfort) |
+| `radius` | `targetRadius` | 0.42 | object size (m) |
+| `distance` | `viewDistance` | 1.8 | recenter distance (m) |
+| `floory` / `worldz` | placement | 1.25 / −1.8 | default pose |
+| `latticex` | `latticeOffsetX` | −0.55 | lattice lateral offset |
+| `idle` | `idleMs` | 3000 | chrome fade delay |
+| `linemin` / `linemax` | edge half-width | 0.0009 / 0.0024 | wire thickness (m) |
+| `enter` | `enterMs` | 800 | enter ease (0 = snap) |
+
+### Checklist (tick on device)
+
+- [ ] Default distance / height feel arm’s-length (try recenter: both grips 1 s)
+- [ ] Grab: not sluggish, not nauseating (`grab`, `maxdtheta`)
+- [ ] Stick orbit smooth (`rotate`, `deadzone`)
+- [ ] Dolly range usable (`dolly`, then wheel-equivalent feel)
+- [ ] Wire thickness readable at n=4 and n=6 (`linemin` / `linemax`)
+- [ ] Lattice ray targets reachable, not covering the object (`latticex`, `spacing`)
+- [ ] Idle fade leaves only the object (~3 s)
+- [ ] Isocline n=4 / Within+Schlegel / mirror collapse still “aha”
+- [ ] n=6 tumble + Schlegel feels ≥ 72 Hz on Quest 2
+
+When a value lands better than the default, update `XR_DEFAULTS` in
+`xr-config.js` and drop the query param.

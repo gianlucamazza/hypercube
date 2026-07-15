@@ -13,7 +13,7 @@ import {
   AMBER_RGB,
   ICE_RGB,
 } from "./palette.js";
-import { LATTICE_HIT_R } from "./xr-ui.js";
+import { XR_DEFAULTS } from "./xr-config.js";
 
 const VS = `
 attribute vec3 aPos;
@@ -39,15 +39,8 @@ void main() {
 
 const COMET_SPEED = 1;
 const COMET_TRAIL = 10;
-const FLOOR_Y = 1.25;
-const HEAD_Y = -0.15;
-const WORLD_Z = -1.8;
-const TARGET_RADIUS = 0.42;
 const FLOATS_PER_VERT = 7;
 const STRIDE = FLOATS_PER_VERT * 4;
-const ENTER_MS = 800;
-// 6 verts per edge quad (2 tris), 3 per face tri (fan expanded later).
-const VERTS_PER_EDGE = 6;
 
 const grayCache = new Map();
 function grayCycle(n) {
@@ -59,16 +52,16 @@ function grayCycle(n) {
   return c;
 }
 
-export function defaultWorldOffset(floorRelative) {
+export function defaultWorldOffset(floorRelative, cfg = XR_DEFAULTS) {
   return {
     x: 0,
-    y: floorRelative ? FLOOR_Y : HEAD_Y,
-    z: WORLD_Z,
+    y: floorRelative ? cfg.floorY : cfg.headY,
+    z: cfg.worldZ,
   };
 }
 
-// Place object ~1.8 m ahead of the viewer, chest-ish height.
-export function worldOffsetFromHead(headMatrix, floorRelative) {
+// Place object ahead of the viewer at cfg.viewDistance, chest-ish height.
+export function worldOffsetFromHead(headMatrix, floorRelative, cfg = XR_DEFAULTS) {
   // headMatrix column-major; position at 12,13,14; forward -Z = -m[8..10]
   const fx = -headMatrix[8];
   const fy = -headMatrix[9];
@@ -80,8 +73,8 @@ export function worldOffsetFromHead(headMatrix, floorRelative) {
   const hx = headMatrix[12];
   const hy = headMatrix[13];
   const hz = headMatrix[14];
-  const dist = 1.8;
-  const y = floorRelative ? FLOOR_Y : hy + HEAD_Y;
+  const dist = cfg.viewDistance;
+  const y = floorRelative ? cfg.floorY : hy + cfg.headY;
   return {
     x: hx + nx * dist,
     y,
@@ -89,7 +82,7 @@ export function worldOffsetFromHead(headMatrix, floorRelative) {
   };
 }
 
-export function createXrRenderer() {
+export function createXrRenderer(initialConfig = XR_DEFAULTS) {
   const canvas = document.createElement("canvas");
   canvas.width = 1;
   canvas.height = 1;
@@ -118,6 +111,11 @@ export function createXrRenderer() {
   let fitGeometry = null;
   let fitMode = null;
   let sessionStart = null;
+  let cfg = { ...XR_DEFAULTS, ...initialConfig };
+
+  function setConfig(next) {
+    cfg = { ...XR_DEFAULTS, ...next };
+  }
 
   function beginSession(now = performance.now()) {
     sessionStart = now;
@@ -127,7 +125,7 @@ export function createXrRenderer() {
   function draw(state, xrFrame, refSpace, time, opts = {}) {
     const {
       floorRelative = true,
-      worldOffset = defaultWorldOffset(floorRelative),
+      worldOffset = defaultWorldOffset(floorRelative, cfg),
       lattice = [],
       latticeOpacity = 0,
       rays = [],
@@ -163,7 +161,8 @@ export function createXrRenderer() {
       const r = Math.hypot(p[0], p[1], p[2]);
       if (r > maxR) maxR = r;
     }
-    const target = maxR > 1e-9 ? TARGET_RADIUS / maxR : (fitScale ?? 1);
+    const targetRadius = cfg.targetRadius;
+    const target = maxR > 1e-9 ? targetRadius / maxR : (fitScale ?? 1);
     if (fitScale == null || fitGeometry !== geometry || fitMode !== mode) {
       fitScale = target;
       fitGeometry = geometry;
@@ -176,7 +175,11 @@ export function createXrRenderer() {
     // Enter ease: scale + alpha.
     let appear = 1;
     if (enterAlpha && sessionStart != null && !reducedMotion) {
-      const t = Math.min(1, (performance.now() - sessionStart) / ENTER_MS);
+      const enterMs = Math.max(0, cfg.enterMs);
+      const t =
+        enterMs <= 0
+          ? 1
+          : Math.min(1, (performance.now() - sessionStart) / enterMs);
       appear = t * t * (3 - 2 * t);
       scale *= 0.15 + 0.85 * appear;
     }
@@ -232,6 +235,7 @@ export function createXrRenderer() {
       latticeOpacity,
       hoverKey,
       rays,
+      cfg,
     );
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
@@ -277,7 +281,7 @@ export function createXrRenderer() {
     };
   }
 
-  return { gl, canvas, draw, beginSession, defaultWorldOffset };
+  return { gl, canvas, draw, beginSession, setConfig, defaultWorldOffset };
 }
 
 function estimateFloats(edgeCount, faces, cometN, latticeCount, rayCount) {
@@ -315,6 +319,7 @@ function fillMesh(
   latticeOpacity,
   hoverKey,
   rays,
+  cfg = XR_DEFAULTS,
 ) {
   const edgeCount = edges.length;
   let o = 0;
@@ -398,7 +403,9 @@ function fillMesh(
     const d = (depthT[ia] + depthT[ib]) / 2;
     const w = warmT != null ? (warmT[ia] + warmT[ib]) / 2 : null;
     const [r, g, b, a] = edgeColor(d, w);
-    const hw = edgeHalfWidth(d) / Math.max(scale, 1e-9); // in projection units
+    const hw =
+      edgeHalfWidth(d, cfg.edgeHalfWidthMin, cfg.edgeHalfWidthMax) /
+      Math.max(scale, 1e-9); // in projection units
     const pa = points[ia];
     const pb = points[ib];
     o = emitQuad(
@@ -509,7 +516,8 @@ function fillMesh(
         b = AMBER_RGB[2];
         a = (hover ? 0.95 : 0.75) * latticeOpacity;
       }
-      const s = hover ? LATTICE_HIT_R * 1.25 : LATTICE_HIT_R * 0.85;
+      const hitR = cfg.latticeHitR;
+      const s = hover ? hitR * 1.25 : hitR * 0.85;
       if (t.kind === "mirror") {
         o = emitSquare(floats, o, x, y, z, s, r, g, b, a, pushW);
       } else {
