@@ -110,3 +110,47 @@ test("dolly widens the final perspective (larger distance, flatter image)", () =
     Math.min(...pts.map((p) => Math.hypot(...p)));
   assert.ok(spread(wide.points) < spread(tight.points));
 });
+
+test("stopAt 3 returns 3-vectors and no depth3 for n = 3..6", () => {
+  for (let n = 3; n <= 6; n++) {
+    const { vertices } = hypercube(n);
+    for (const mode of ["perspective", "orthographic", "schlegel"]) {
+      const { points, depth3, depthW } = project(vertices, {
+        mode,
+        stopAt: 3,
+      });
+      assert.equal(points.length, vertices.length);
+      for (const p of points) assert.equal(p.length, 3);
+      assert.equal(depth3, null);
+      if (n >= 4) assert.equal(depthW.length, vertices.length);
+      else assert.equal(depthW, null);
+      for (const p of points)
+        assert.ok(
+          p.every(Number.isFinite),
+          `finite stopAt:3 ${mode} n=${n}`,
+        );
+    }
+  }
+});
+
+test("stopAt 3 pads n = 2 into the xy-plane of 3-space", () => {
+  const { vertices } = hypercube(2);
+  const { points, depth3, depthW } = project(vertices, { stopAt: 3 });
+  assert.equal(depth3, null);
+  assert.equal(depthW, null);
+  for (const p of points) {
+    assert.equal(p.length, 3);
+    assert.equal(p[2], 0);
+  }
+});
+
+test("stopAt 3 residual z matches full-cascade depth3 at the frontal pose", () => {
+  // With no intermediate stage the residual z is exactly the coordinate the
+  // 3→2 stage would consume. At n = 3 the cascade has only that stage.
+  const { vertices } = hypercube(3);
+  const full = project(vertices, { mode: "perspective" });
+  const mid = project(vertices, { mode: "perspective", stopAt: 3 });
+  for (let k = 0; k < vertices.length; k++) {
+    assertClose(mid.points[k][2], full.depth3[k]);
+  }
+});

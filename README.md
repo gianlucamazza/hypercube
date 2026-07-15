@@ -39,9 +39,19 @@ Then open <http://localhost:8000>.
 | wheel, pinch, or `[` / `]`                             | dolly the final perspective                                                    |
 | `Σ` (top right)                                        | element counts, symmetry order, and the Gray-code comet (`g`)                  |
 | `Space`                                                | pause                                                                          |
+| `enter vr` (when the browser supports WebXR)           | immersive stereo of the 3-space intermediate (Quest, desktop VR, …)            |
 
 A pose is shareable via URL:
 `?n=5&view=net&projection=schlegel&preset=within&gray=1`.
+
+### VR (WebXR)
+
+On a headset browser that implements `immersive-vr` (Meta Quest Browser,
+Chrome + SteamVR, …) an **enter vr** control appears. It renders the same
+rotate → project cascade stopped at 3-space as a stereoscopic WebGL wireframe
+— still zero dependencies, still the same pose and motion. Thumbstick Y
+dollies, X rotates a screen-facing plane; A/X pauses, B/Y exits. Requires
+`n ≥ 3` and a secure context (HTTPS or localhost).
 
 ## Project structure
 
@@ -55,8 +65,13 @@ src/core/             pure math — no DOM
   combinatorics.js    counts, Gray code, rotation planes, |B_n| = 2^n·n!
   matrix.js           n×n helpers, Gram–Schmidt
   rotation.js         C(n,2) plane rotations on an accumulated Q ∈ SO(n)
-  projection.js       perspective / orthographic / Schlegel-style cascade to 2D
-src/render/           Canvas 2D wireframe: depth fade, w-temperature, comet
+  projection.js       perspective / orthographic / Schlegel-style cascade (stopAt 2|3)
+src/render/           Canvas 2D wireframe + optional WebXR stereo path
+  renderer.js         Canvas 2D surface
+  scene.js            rotate → project → stroke
+  palette.js          depth presence + w-temperature
+  xr-session.js       WebXR enter/exit + controller poll
+  xr-renderer.js      stereoscopic WebGL lines (stopAt: 3)
 src/ui/               controls, structure panel, motion presets
 test/                 node --test suite (core + a canvas-stubbed scene)
 tools/verify.mjs      headless end-to-end checks (npm run verify)

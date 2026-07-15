@@ -1,6 +1,7 @@
 // Projection cascade nD -> 3D -> 2D. Each stage consumes the last coordinate
 // of every point and reports it as that stage's depth. Pure functions over
-// arrays; the renderer decides what to do with the depths.
+// arrays; the renderer decides what to do with the depths. Optional stopAt
+// leaves the cascade at 3-space for a stereo / WebXR renderer.
 //
 // Modes:
 //   perspective  - perspective division at every stage
@@ -71,17 +72,24 @@ function adaptiveMargin(maxDepth, minDepth) {
   return CLIP_MARGIN * Math.max(maxDepth - minDepth, 1);
 }
 
+// stopAt: 2 (default) collapses to the screen plane; 3 leaves the intermediate
+// 3-space cloud for a stereo / WebXR renderer. Dolly only affects the final
+// 3→2 stage, so it is a no-op when stopAt is 3 (the XR path maps dolly to
+// world scale instead). When n < stopAt the residual axes are padded with 0.
 export function project(vertices, options = {}) {
-  const { mode = "perspective", dolly = 1 } = options;
+  const { mode = "perspective", dolly = 1, stopAt = 2 } = options;
   const n = vertices[0].length;
   const count = vertices.length;
+  const endDim = stopAt === 3 ? 3 : 2;
 
   const points = vertices.map((v) => v.slice());
-  const depth3 = n >= 3 ? new Array(count) : null;
+  // depth3 is the coordinate consumed by the 3→2 stage; only present on the
+  // full cascade. At stopAt 3 that residual z stays in points[k][2].
+  const depth3 = n >= 3 && endDim === 2 ? new Array(count) : null;
   const depthW = n >= 4 ? new Array(count) : null;
   const stages = [];
 
-  for (let d = n; d > 2; d--) {
+  for (let d = n; d > endDim; d--) {
     const first = d === n;
 
     let maxDepth = -Infinity;
@@ -107,12 +115,18 @@ export function project(vertices, options = {}) {
       const p = points[k];
       const depth = p[d - 1];
       if (first && depthW) depthW[k] = depth;
-      if (d === 3) depth3[k] = depth;
+      if (d === 3 && depth3) depth3[k] = depth;
       if (!orthographic) {
         const scale = distance / (distance - depth);
         for (let i = 0; i < d - 1; i++) p[i] *= scale;
       }
       p.length = d - 1;
+    }
+  }
+
+  if (n < endDim) {
+    for (const p of points) {
+      while (p.length < endDim) p.push(0);
     }
   }
 

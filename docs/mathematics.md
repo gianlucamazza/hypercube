@@ -98,6 +98,12 @@ coordinate consumed at the 3D→2D stage drives depth fading; the coordinate
 consumed at the _first_ stage (the extra dimension) drives the violet–amber
 temperature.
 
+The cascade may stop early. With `stopAt: 3` the 3→2 stage is omitted and the
+function returns the intermediate 3-space cloud — the same points a WebXR
+renderer places in the headset, with residual `z` carrying the presence that
+the 2D path would have read as `depth3`. Dolly (final-stage camera distance)
+is a no-op in that mode; the immersive path maps dolly to world scale instead.
+
 The three modes differ only in how the stages are configured:
 
 - **perspective** — perspective division at every stage, camera at a base

@@ -30,16 +30,24 @@ export function temperature(t) {
 }
 
 // depthT in [0,1] (0 = farthest in 3-space); warmT in [0,1] or null (n < 4).
-export function edgeStyle(depthT, warmT) {
+// Shared presence/temperature encoding for Canvas 2D and the WebGL path.
+// Returns linear RGBA with channels in [0,1] (WebGL-native).
+export function edgeColor(depthT, warmT) {
   const presence = smoothstep(depthT);
   // The far floor stays clearly visible: depth reads as recession, but the
-  // inner cells must never dissolve entirely. (Alpha carries visibility;
-  // the width floor stays at 0.6 — wider far lines cost fps at n = 6.)
+  // inner cells must never dissolve entirely.
   const alpha = lerp(0.26, 0.92, presence);
-  const width = lerp(0.6, 2.0, presence);
   const [r, g, b] = warmT == null ? ICE : temperature(warmT);
+  return [r / 255, g / 255, b / 255, alpha];
+}
+
+export function edgeStyle(depthT, warmT) {
+  const [r, g, b, alpha] = edgeColor(depthT, warmT);
+  const presence = smoothstep(depthT);
+  // Width stays Canvas-only: WebGL lineWidth is not portable.
+  const width = lerp(0.6, 2.0, presence);
   return {
-    strokeStyle: `rgba(${r},${g},${b},${alpha.toFixed(3)})`,
+    strokeStyle: `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${alpha.toFixed(3)})`,
     lineWidth: width,
   };
 }

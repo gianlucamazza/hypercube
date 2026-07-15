@@ -1,4 +1,6 @@
 // Entry point: owns the app state, wires core -> render -> ui, runs the loop.
+// WebXR is progressive enhancement: when immersive-vr is available the same
+// state drives a stereoscopic WebGL wireframe of the 3-space intermediate.
 
 import { hypercube } from "./core/hypercube.js";
 import { net } from "./core/net.js";
@@ -6,6 +8,12 @@ import { identity, orthonormalize } from "./core/matrix.js";
 import { applyPlaneRotation, composeVelocities } from "./core/rotation.js";
 import { createRenderer } from "./render/renderer.js";
 import { createScene } from "./render/scene.js";
+import { createXrRenderer } from "./render/xr-renderer.js";
+import {
+  isImmersiveVrSupported,
+  enterImmersiveVr,
+  pollXrInput,
+} from "./render/xr-session.js";
 import { initControls } from "./ui/controls.js";
 import { initPanel } from "./ui/panel.js";
 import { presetByName } from "./ui/presets.js";
@@ -165,10 +173,32 @@ const panel = initPanel({
   actions,
 });
 
+// WebXR chrome — declared before the first sync() so dimension/URL updates
+// can refresh the progressive Enter VR control without a TDZ on vrButton.
+const vrButton = document.getElementById("vr-enter");
+let xrActive = false;
+let xrStarting = false;
+let xrSession = null;
+let xrRefSpace = null;
+let xrFloorRelative = true;
+let xrRenderer = null;
+let xrButtonStates = new Map();
+
+function refreshVrButton() {
+  if (!vrButton) return;
+  // Stereo needs at least 3-space; hide the control otherwise.
+  // Keep it visible during a session so a desktop mirror can exit via the UI.
+  vrButton.hidden = !vrButton.dataset.supported || (state.n < 3 && !xrActive);
+  vrButton.disabled = xrStarting;
+  vrButton.setAttribute("aria-pressed", String(xrActive));
+  vrButton.textContent = xrActive ? "exit vr" : "enter vr";
+}
+
 function sync() {
   controls.update();
   panel.update();
   pausedEl.hidden = !state.paused;
+  refreshVrButton();
 }
 
 ghost.textContent = String(state.n);
@@ -211,10 +241,7 @@ const parsedVelocities = () =>
 let last = performance.now();
 let frames = 0;
 
-function frame(now) {
-  // Re-register first: an exception below must cost one frame, not
-  // silently freeze the loop forever.
-  requestAnimationFrame(frame);
+function simulate(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
@@ -248,10 +275,116 @@ function frame(now) {
     if (t >= 1) quarterAnim = null;
   }
 
+  return dt;
+}
+
+function frame(now) {
+  // Re-register first: an exception below must cost one frame, not
+  // silently freeze the loop forever.
+  requestAnimationFrame(frame);
+  // While immersive, the XR rAF owns simulation and drawing.
+  if (xrActive) return;
+  simulate(now);
   scene.draw(state, now / 1000);
 }
 
 requestAnimationFrame(frame);
 
+// --- WebXR (progressive enhancement) ----------------------------------------
+
+async function startVr() {
+  if (xrActive || xrStarting || state.n < 3) return;
+  xrStarting = true;
+  refreshVrButton();
+  try {
+    if (!xrRenderer) xrRenderer = createXrRenderer();
+    const { session, refSpace, floorRelative } = await enterImmersiveVr(
+      xrRenderer.gl,
+    );
+    xrSession = session;
+    xrRefSpace = refSpace;
+    xrFloorRelative = floorRelative;
+    xrActive = true;
+    xrStarting = false;
+    xrButtonStates = new Map();
+    last = performance.now();
+    refreshVrButton();
+
+    session.addEventListener("end", () => {
+      xrActive = false;
+      xrStarting = false;
+      xrSession = null;
+      xrRefSpace = null;
+      xrButtonStates = new Map();
+      last = performance.now();
+      refreshVrButton();
+      wake();
+    });
+
+    const onXRFrame = (time, xrFrame) => {
+      if (!xrActive || !xrSession) return;
+      xrSession.requestAnimationFrame(onXRFrame);
+      const dt = simulate(time);
+
+      const input = pollXrInput(xrSession, xrButtonStates);
+      xrButtonStates = input.buttons;
+      // Thumbstick: Y dollies, X rotates the screen-facing horizontal plane.
+      // Secondary stick X (other hand, if stronger) already wins via max-abs.
+      if (input.stickY) actions.dollyBy(Math.exp(-input.stickY * dt * 1.4));
+      if (input.stickX) {
+        const depthAxis = Math.min(2, state.n - 1);
+        actions.rotateBy(0, depthAxis, input.stickX * dt * 1.6);
+      }
+      if (input.pressed.pause) actions.togglePause();
+      if (input.pressed.exit) {
+        xrSession.end().catch(() => {});
+        return;
+      }
+
+      xrRenderer.draw(
+        state,
+        xrFrame,
+        xrRefSpace,
+        time / 1000,
+        xrFloorRelative,
+      );
+    };
+    session.requestAnimationFrame(onXRFrame);
+  } catch (err) {
+    console.warn("WebXR session failed:", err);
+    xrActive = false;
+    xrStarting = false;
+    refreshVrButton();
+  }
+}
+
+function toggleVr() {
+  if (xrStarting) return;
+  if (xrActive && xrSession) {
+    xrSession.end().catch(() => {});
+    return;
+  }
+  startVr();
+}
+
+if (vrButton) {
+  vrButton.hidden = true;
+  vrButton.addEventListener("click", () => {
+    wake();
+    toggleVr();
+  });
+  isImmersiveVrSupported().then((ok) => {
+    if (ok) {
+      vrButton.dataset.supported = "1";
+      refreshVrButton();
+    }
+  });
+}
+
 // Read-only debug handle for tools/verify.mjs — not part of any API.
 window.__state = state;
+window.__xr = {
+  get active() {
+    return xrActive;
+  },
+};

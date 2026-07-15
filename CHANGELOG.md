@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- WebXR progressive enhancement: when the browser supports `immersive-vr`,
+  an **enter vr** control opens a stereoscopic WebGL wireframe of the
+  intermediate 3-space projection (Meta Quest, desktop VR, etc.). Same
+  pure-math core and pose state; zero new dependencies. Controllers: thumbstick
+  dolly/rotate, A/X pause, B/Y exit.
+- `project(..., { stopAt: 3 })` leaves the cascade in 3-space for the XR path
+  (and for anything else that wants the pre-screen cloud).
+
+### Fixed
+
+- XR path: painter-sorted translucent edges (no depth-write fighting), reused
+  line buffer + cached Gray cycle, placement for `local` vs `local-floor`,
+  dual-controller stick max-abs (no double dolly), and a re-entry guard while
+  the session is starting.
+
 ## [0.1.1] — 2026-07-14
 
 ### Changed
