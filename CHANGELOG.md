@@ -9,18 +9,19 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - WebXR progressive enhancement: when the browser supports `immersive-vr`,
-  an **enter vr** control opens a stereoscopic WebGL wireframe of the
-  intermediate 3-space projection (Meta Quest, desktop VR, etc.). Same
-  pure-math core and pose state; zero new dependencies. Controllers: thumbstick
-  dolly/rotate, A/X pause, B/Y exit.
-- `project(..., { stopAt: 3 })` leaves the cascade in 3-space for the XR path
-  (and for anything else that wants the pre-screen cloud).
+  an **enter vr** control opens a stereoscopic presentation of the intermediate
+  3-space projection (Meta Quest, desktop VR, etc.). Same pure-math core and
+  pose state; zero new dependencies.
+- `project(..., { stopAt: 3 })` leaves the cascade in 3-space for the XR path.
+- VR excellence pass: camera-facing thick edges, Schlegel face veils, comet
+  head + glow, enter ease, dual-hand grab-to-turn, dual sticks, diegetic B_n
+  lattice with ray select (toggle / quarter-turn / mirror), preset and
+  projection cycle, dual-grip recenter, idle-fading chrome, `docs/vr.md`.
 
 ### Fixed
 
-- XR path: painter-sorted translucent edges (no depth-write fighting), reused
-  line buffer + cached Gray cycle, placement for `local` vs `local-floor`,
-  dual-controller stick max-abs (no double dolly), and a re-entry guard while
+- XR path: painter-sorted translucent geometry, reused buffers + cached Gray
+  cycle, placement for `local` vs `local-floor`, and a re-entry guard while
   the session is starting.
 
 ## [0.1.1] — 2026-07-14

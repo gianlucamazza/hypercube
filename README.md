@@ -48,10 +48,23 @@ A pose is shareable via URL:
 
 On a headset browser that implements `immersive-vr` (Meta Quest Browser,
 Chrome + SteamVR, …) an **enter vr** control appears. It renders the same
-rotate → project cascade stopped at 3-space as a stereoscopic WebGL wireframe
-— still zero dependencies, still the same pose and motion. Thumbstick Y
-dollies, X rotates a screen-facing plane; A/X pauses, B/Y exits. Requires
-`n ≥ 3` and a secure context (HTTPS or localhost).
+rotate → project cascade stopped at 3-space as a stereoscopic thick-line
+wireframe with Schlegel veils and the Gray-code comet — still zero
+dependencies, still the same pose and motion. Requires `n ≥ 3` and a secure
+context (HTTPS or localhost).
+
+| In-headset control | Effect |
+| --- | --- |
+| Dominant stick | rotate screen-facing planes |
+| Off-hand stick Y / X | dolly / touch the highest axis (n ≥ 4) |
+| Grip + move | grab-turn (off-hand grip reaches the highest axis) |
+| Ray → plane dot / square | toggle plane, quarter-turn, or mirror |
+| Stick click (dom. / off) | cycle projection / motion preset |
+| A/X · B/Y | pause · exit |
+| Both grips 1 s | recenter object in front of you |
+
+The B_n lattice idles away after three seconds of stillness. See
+[docs/vr.md](docs/vr.md).
 
 ## Project structure
 
@@ -70,12 +83,15 @@ src/render/           Canvas 2D wireframe + optional WebXR stereo path
   renderer.js         Canvas 2D surface
   scene.js            rotate → project → stroke
   palette.js          depth presence + w-temperature
-  xr-session.js       WebXR enter/exit + controller poll
-  xr-renderer.js      stereoscopic WebGL lines (stopAt: 3)
+  xr-session.js       WebXR enter/exit
+  xr-input.js         grab FSM, sticks, ray pick (pure, tested)
+  xr-ui.js            diegetic B_n lattice + idle fade
+  xr-renderer.js      thick lines, Schlegel veils, comet, lattice
 src/ui/               controls, structure panel, motion presets
 test/                 node --test suite (core + a canvas-stubbed scene)
 tools/verify.mjs      headless end-to-end checks (npm run verify)
 docs/mathematics.md   the notes behind all of the above
+docs/vr.md            WebXR intent, controls, comfort
 ```
 
 ## Test

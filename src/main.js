@@ -8,15 +8,21 @@ import { identity, orthonormalize } from "./core/matrix.js";
 import { applyPlaneRotation, composeVelocities } from "./core/rotation.js";
 import { createRenderer } from "./render/renderer.js";
 import { createScene } from "./render/scene.js";
-import { createXrRenderer } from "./render/xr-renderer.js";
 import {
-  isImmersiveVrSupported,
-  enterImmersiveVr,
-  pollXrInput,
-} from "./render/xr-session.js";
+  createXrRenderer,
+  defaultWorldOffset,
+  worldOffsetFromHead,
+} from "./render/xr-renderer.js";
+import { isImmersiveVrSupported, enterImmersiveVr } from "./render/xr-session.js";
+import {
+  createXrInput,
+  sampleControllers,
+  pickLattice,
+} from "./render/xr-input.js";
+import { buildLatticeTargets, createXrUiChrome } from "./render/xr-ui.js";
 import { initControls } from "./ui/controls.js";
 import { initPanel } from "./ui/panel.js";
-import { presetByName } from "./ui/presets.js";
+import { PRESETS, presetByName } from "./ui/presets.js";
 
 const MIN_N = 2;
 const MAX_N = 6;
@@ -182,7 +188,6 @@ let xrSession = null;
 let xrRefSpace = null;
 let xrFloorRelative = true;
 let xrRenderer = null;
-let xrButtonStates = new Map();
 
 function refreshVrButton() {
   if (!vrButton) return;
@@ -292,6 +297,24 @@ requestAnimationFrame(frame);
 
 // --- WebXR (progressive enhancement) ----------------------------------------
 
+const xrInput = createXrInput();
+const xrChrome = createXrUiChrome();
+let xrWorldOffset = defaultWorldOffset(true);
+const PROJECTIONS = ["perspective", "orthographic", "schlegel"];
+const HINT_KEY = "hypercube-vr-hinted";
+
+function cyclePreset() {
+  const names = PRESETS.map((p) => p.name);
+  const i = names.indexOf(state.preset);
+  const next = names[(i + 1) % names.length];
+  actions.applyPreset(next);
+}
+
+function cycleProjection() {
+  const i = PROJECTIONS.indexOf(state.projection);
+  actions.setProjection(PROJECTIONS[(i + 1) % PROJECTIONS.length]);
+}
+
 async function startVr() {
   if (xrActive || xrStarting || state.n < 3) return;
   xrStarting = true;
@@ -304,18 +327,33 @@ async function startVr() {
     xrSession = session;
     xrRefSpace = refSpace;
     xrFloorRelative = floorRelative;
+    xrWorldOffset = defaultWorldOffset(floorRelative);
+    xrInput.reset();
+    xrChrome.wake();
+    xrRenderer.beginSession(performance.now());
     xrActive = true;
     xrStarting = false;
-    xrButtonStates = new Map();
     last = performance.now();
     refreshVrButton();
+
+    // First-run ghost hint: brief title on the page button; in-headset the
+    // lattice itself teaches. Mark so we do not nag every session.
+    try {
+      if (!sessionStorage.getItem(HINT_KEY)) {
+        sessionStorage.setItem(HINT_KEY, "1");
+        if (vrButton)
+          vrButton.title =
+            "grip: turn · sticks: orbit/dolly · ray: planes · B: exit";
+      }
+    } catch {
+      // sessionStorage may be blocked
+    }
 
     session.addEventListener("end", () => {
       xrActive = false;
       xrStarting = false;
       xrSession = null;
       xrRefSpace = null;
-      xrButtonStates = new Map();
       last = performance.now();
       refreshVrButton();
       wake();
@@ -325,29 +363,90 @@ async function startVr() {
       if (!xrActive || !xrSession) return;
       xrSession.requestAnimationFrame(onXRFrame);
       const dt = simulate(time);
+      const now = performance.now();
 
-      const input = pollXrInput(xrSession, xrButtonStates);
-      xrButtonStates = input.buttons;
-      // Thumbstick: Y dollies, X rotates the screen-facing horizontal plane.
-      // Secondary stick X (other hand, if stronger) already wins via max-abs.
-      if (input.stickY) actions.dollyBy(Math.exp(-input.stickY * dt * 1.4));
-      if (input.stickX) {
-        const depthAxis = Math.min(2, state.n - 1);
-        actions.rotateBy(0, depthAxis, input.stickX * dt * 1.6);
+      const controllers = sampleControllers(xrSession, xrFrame, xrRefSpace);
+      const gesture = xrInput.step({
+        controllers,
+        dt,
+        now,
+        n: state.n,
+      });
+
+      if (gesture.wake || gesture.uiOpacityBoost) xrChrome.wake(now);
+      for (const r of gesture.rotate) actions.rotateBy(r.i, r.j, r.theta);
+      if (gesture.dollyFactor !== 1) actions.dollyBy(gesture.dollyFactor);
+      if (gesture.pause) actions.togglePause();
+      if (gesture.cyclePreset) cyclePreset();
+      if (gesture.cycleProjection) cycleProjection();
+      if (gesture.recenter) {
+        const viewer = xrFrame.getViewerPose(xrRefSpace);
+        if (viewer) {
+          xrWorldOffset = worldOffsetFromHead(
+            viewer.transform.matrix,
+            xrFloorRelative,
+          );
+        }
       }
-      if (input.pressed.pause) actions.togglePause();
-      if (input.pressed.exit) {
+      if (gesture.exit) {
         xrSession.end().catch(() => {});
         return;
       }
 
-      xrRenderer.draw(
-        state,
-        xrFrame,
-        xrRefSpace,
-        time / 1000,
-        xrFloorRelative,
-      );
+      // Lattice in object-relative metres (renderer world matrix places it).
+      const origin = [xrWorldOffset.x, xrWorldOffset.y, xrWorldOffset.z];
+      const absTargets = buildLatticeTargets(state.n, origin, state);
+      const relTargets = absTargets.map((t) => ({
+        ...t,
+        pos: [
+          t.pos[0] - origin[0],
+          t.pos[1] - origin[1],
+          t.pos[2] - origin[2],
+        ],
+      }));
+
+      // Rays: world → object-relative for hit test and draw.
+      const relRays = gesture.rays.map((ray) => ({
+        ...ray,
+        origin: [
+          ray.origin[0] - origin[0],
+          ray.origin[1] - origin[1],
+          ray.origin[2] - origin[2],
+        ],
+        length: 1.2,
+      }));
+
+      const hit = pickLattice(relRays, relTargets);
+      let hoverKey = null;
+      if (hit) {
+        hoverKey =
+          hit.target.kind === "plane"
+            ? hit.target.key
+            : `m${hit.target.axis}`;
+        xrChrome.wake(now);
+        const ray = hit.ray;
+        if (ray && ray.triggerEdge) {
+          if (hit.target.kind === "plane") {
+            // Double-trigger: exact quarter-turn; single: toggle velocity.
+            if (ray.double) actions.quarterTurn(hit.target.key);
+            else actions.togglePlane(hit.target.key);
+          } else if (hit.target.kind === "mirror") {
+            actions.mirrorAxis(hit.target.axis);
+          }
+        }
+      }
+
+      const latticeOpacity = xrChrome.update(now);
+
+      xrRenderer.draw(state, xrFrame, xrRefSpace, time / 1000, {
+        floorRelative: xrFloorRelative,
+        worldOffset: xrWorldOffset,
+        lattice: relTargets,
+        latticeOpacity,
+        rays: relRays,
+        hoverKey,
+        reducedMotion: reducedMotion.matches,
+      });
     };
     session.requestAnimationFrame(onXRFrame);
   } catch (err) {
@@ -369,6 +468,7 @@ function toggleVr() {
 
 if (vrButton) {
   vrButton.hidden = true;
+  vrButton.title = "enter immersive VR (Quest and other WebXR headsets)";
   vrButton.addEventListener("click", () => {
     wake();
     toggleVr();

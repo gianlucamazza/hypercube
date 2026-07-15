@@ -53,15 +53,33 @@ export function edgeStyle(depthT, warmT) {
 }
 
 // Translucent face veils (Schlegel mode): a breath of the same temperature.
-export function faceStyle(depthT, warmT) {
+// WebGL-native RGBA in [0,1].
+export function faceColor(depthT, warmT) {
   const alpha = 0.02 + 0.055 * smoothstep(depthT);
   const [r, g, b] = warmT == null ? ICE : temperature(warmT);
-  return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+  return [r / 255, g / 255, b / 255, alpha];
+}
+
+export function faceStyle(depthT, warmT) {
+  const [r, g, b, alpha] = faceColor(depthT, warmT);
+  return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${alpha.toFixed(3)})`;
+}
+
+// Presence → half-width in metres for the XR thick-line path.
+export function edgeHalfWidth(depthT) {
+  const presence = smoothstep(depthT);
+  return lerp(0.0009, 0.0024, presence); // ~1.8–4.8 mm diameter
 }
 
 // The Gray-code comet and its trail.
 export const ACCENT = [255, 244, 224];
+export const AMBER_RGB = [AMBER[0] / 255, AMBER[1] / 255, AMBER[2] / 255];
+export const ICE_RGB = [ICE[0] / 255, ICE[1] / 255, ICE[2] / 255];
 
 export function accent(alpha) {
   return `rgba(${ACCENT[0]},${ACCENT[1]},${ACCENT[2]},${alpha.toFixed(3)})`;
+}
+
+export function accentRgba(alpha) {
+  return [ACCENT[0] / 255, ACCENT[1] / 255, ACCENT[2] / 255, alpha];
 }
