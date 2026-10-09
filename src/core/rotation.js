@@ -76,15 +76,34 @@ function matrixExponential(A) {
 // Q(t + dt) = exp(dt Omega) Q(t). Aggregating the skew generator first is
 // essential because rotations in intersecting planes do not commute; unlike
 // a sequential fold, this result is independent of iterable order.
-// velocities: iterable of { plane: [i, j], omega } with omega in rad/s.
-export function composeVelocities(Q, velocities, dt) {
-  const n = Q.length;
+// Lab-frame angular-velocity matrix (rad/s), the sum of the coordinate-plane
+// generators. Planes outside 0 ≤ i < j < n are ignored: a stale UI key must
+// not throw inside the frame loop.
+export function velocityGenerator(n, velocities) {
   const generator = Array.from({ length: n }, () => new Array(n).fill(0));
   for (const { plane, omega } of velocities) {
-    if (omega === 0) continue;
+    if (!omega) continue;
     const [i, j] = plane;
-    generator[i][j] -= omega * dt;
-    generator[j][i] += omega * dt;
+    if (!Number.isInteger(i) || !Number.isInteger(j)) continue;
+    if (i < 0 || j <= i || j >= n) continue;
+    generator[i][j] -= omega;
+    generator[j][i] += omega;
   }
+  return generator;
+}
+
+// Sign a plane's angular velocity picks up when axis `axis` is reflected.
+// Planes that contain the axis reverse; disjoint planes commute with the
+// reflection and keep their sense. R Ω R for R = diag(1,…,−1,…,1).
+export function mirroredOmega(omega, i, j, axis) {
+  if (!(i === axis || j === axis)) return omega;
+  // `-0` is not `===` to itself under Object.is; keep a zero velocity a zero.
+  return omega === 0 ? 0 : -omega;
+}
+
+// velocities: iterable of { plane: [i, j], omega } with omega in rad/s.
+export function composeVelocities(Q, velocities, dt) {
+  const rate = velocityGenerator(Q.length, velocities);
+  const generator = rate.map((row) => row.map((x) => x * dt));
   return mulMat(matrixExponential(generator), Q);
 }

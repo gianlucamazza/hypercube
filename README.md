@@ -29,7 +29,7 @@ Then open <http://localhost:8000>.
 | Control                                                | Effect                                                                         |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | `− / +` or keys `2`–`6`                                | dimension                                                                      |
-| `solid · net` or `u`                                   | the object, or its unfolding (the Dalí cross for n = 4)                        |
+| `solid · net · section`, or `u`                        | the object, its unfolding (the Dalí cross for n = 4), or the diagonal cut `Σ xᵢ = h`. `u` toggles solid and net only |
 | `perspective · orthographic · schlegel` or `p / o / s` | projection (Schlegel adds translucent face veils)                              |
 | `stillness · isocline · tumble · within`               | motion presets                                                                 |
 | grid, off-diagonal dots (bottom left)                  | toggle rotation in a C(n,2) plane; double-click or `Shift+Enter`: quarter-turn |
@@ -37,12 +37,20 @@ Then open <http://localhost:8000>.
 | drag, or arrow keys                                    | rotate the screen-facing planes                                                |
 | `Shift` + drag, or `Shift` + arrows                    | rotate against the highest axis (touch the 4th dimension)                      |
 | wheel, pinch, or `[` / `]`                             | dolly the final perspective                                                    |
-| `Σ` (top right)                                        | element counts, symmetry order, and the Gray-code comet (`g`)                  |
+| `Σ` (top right)                                        | element counts, symmetry order, and the Gray-code comet (`g`). In the section view the table counts the cut, cells included for n ≥ 4, and names the figure only at a proved height. The n-cube formula stays as context, and `g` does not run |
 | `Space`                                                | pause                                                                          |
 | `enter vr` (when the browser supports WebXR)           | immersive stereo of the 3-space intermediate (Quest, desktop VR, …)            |
 
 A pose is shareable via URL:
 `?n=5&view=net&projection=schlegel&preset=within&gray=1`.
+`cam` is the final-stage camera factor, `q` the orientation once it has
+left the identity, and `planes` the velocities when the motion is
+`preset=custom`. A paused section stores its height as `cut`
+(`?view=section&cut=0.5`); a playing sweep omits it. `cut` is not `cam`,
+and `dolly` remains the VR stick. VR comfort keys (`grab`, `dolly`, …) are
+left in place.
+A projection preset that a later `view=net` or a different `projection`
+no longer matches is stored as `preset=custom`.
 
 ### VR (WebXR)
 
@@ -58,7 +66,7 @@ context (HTTPS or localhost).
 | Dominant stick | rotate screen-facing planes |
 | Off-hand stick Y / X | dolly / touch the highest axis (n ≥ 4) |
 | Grip + move | grab-turn (off-hand grip reaches the highest axis) |
-| Ray → plane dot / square | toggle plane, quarter-turn, or mirror |
+| Ray → plane dot / square | toggle (after the double-trigger window), quarter-turn, or mirror |
 | Stick click (dom. / off) | cycle projection / motion preset |
 | A/X · B/Y | pause · exit |
 | Both grips 1 s | recenter object in front of you |
@@ -74,6 +82,7 @@ styles/main.css       dark theme tokens, idle-fading chrome
 src/main.js           entry point: state, actions, the frame loop
 src/core/             pure math — no DOM
   hypercube.js        vertices as bit strings, edges as bit flips
+  section.js          diagonal cut Σ xᵢ = h; names through the n = 5 census
   net.js              the 2n facets unfolded (Dalí cross), same pipeline
   combinatorics.js    counts, Gray code, rotation planes, |B_n| = 2^n·n!
   matrix.js           n×n helpers, Gram–Schmidt
@@ -82,7 +91,7 @@ src/core/             pure math — no DOM
 src/render/           Canvas 2D wireframe + optional WebXR stereo path
   renderer.js         Canvas 2D surface
   scene.js            rotate → project → stroke
-  palette.js          depth presence + w-temperature
+  palette.js          depth presence + temperature of every pre-3D axis
   xr-config.js        VR comfort knobs + URL field overrides
   xr-session.js       WebXR enter/exit
   xr-input.js         grab FSM, sticks, ray pick (pure, tested)
@@ -110,8 +119,8 @@ pull request.
 Three choices carry the tone. The interface dissolves after three seconds
 of stillness, so the object is alone on the screen. The fourth dimension is
 not labeled but _felt_: depth in 3-space sets presence (alpha and line
-weight), while the extra coordinate shifts temperature from violet (far) to
-amber (near). And the one flourish — a comet walking the binary-reflected
+weight), while every coordinate the cascade drops before 3-space shifts
+temperature from violet (far) to amber (near). And the one flourish — a comet walking the binary-reflected
 Gray code — is a theorem you can watch: a Hamiltonian cycle on Q_n, one bit
 at a time.
 

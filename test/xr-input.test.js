@@ -7,6 +7,7 @@ import {
   createXrInput,
   raySphereHit,
   pickLattice,
+  latticeGesture,
   MAX_DTHETA,
   DEADZONE,
   RECENTER_HOLD_MS,
@@ -234,6 +235,64 @@ test("dual grip held long enough requests recenter", () => {
     n: 4,
   });
   assert.equal(late.recenter, true);
+});
+
+test("stick down is a positive turn once mathematical +y is up", () => {
+  const input = createXrInput();
+  const g = input.step({
+    controllers: [
+      {
+        id: "right",
+        hand: "right",
+        buttons: [false, false, false, false, false, false],
+        stickX: 0,
+        stickY: 1,
+        grip: false,
+        trigger: false,
+        stickClick: false,
+        btnA: false,
+        btnB: false,
+        pos: null,
+        dir: null,
+      },
+    ],
+    dt: 0.016,
+    now: 1000,
+    n: 4,
+  });
+  const vert = g.rotate.find((r) => r.i === 1 && r.j === 2);
+  assert.ok(vert, "vertical stick rotates (y, z)");
+  assert.ok(vert.theta > 0, `stick-down theta ${vert.theta}`);
+});
+
+test("latticeGesture: squeeze and double quarter-turn, single trigger waits", () => {
+  const plane = { kind: "plane", key: "0,1" };
+  const mirror = { kind: "mirror", axis: 2 };
+  const ray = { triggerEdge: true, double: false, squeezeEdge: false };
+  assert.deepEqual(latticeGesture({ target: plane, ray }), {
+    type: "arm-toggle",
+    key: "0,1",
+  });
+  assert.deepEqual(
+    latticeGesture({ target: plane, ray: { ...ray, double: true } }),
+    { type: "quarter", key: "0,1" },
+  );
+  assert.deepEqual(
+    latticeGesture({
+      target: plane,
+      ray: { triggerEdge: true, double: false, squeezeEdge: true },
+    }),
+    { type: "quarter", key: "0,1" },
+  );
+  assert.deepEqual(latticeGesture({ target: mirror, ray }), {
+    type: "mirror",
+    axis: 2,
+  });
+  assert.equal(
+    latticeGesture({ target: plane, ray: { ...ray, triggerEdge: false } }),
+    null,
+  );
+  assert.equal(latticeGesture(null), null);
 });
 
 test("offhand stick Y dollies", () => {

@@ -11,6 +11,7 @@ import {
   planeRotation,
   applyPlaneRotation,
   composeVelocities,
+  mirroredOmega,
 } from "../src/core/rotation.js";
 import { assertClose, assertMatrixClose, det } from "./helpers.js";
 
@@ -170,6 +171,37 @@ test("orthonormalize restores orthonormality from a visible perturbation", () =>
   );
   const Q = orthonormalize(noisy);
   assertMatrixClose(mulMat(Q, transpose(Q)), identity(4), 1e-12);
+});
+
+test("mirroredOmega flips a plane iff it contains the axis", () => {
+  assert.equal(mirroredOmega(0.2, 0, 1, 0), -0.2);
+  assert.equal(mirroredOmega(0.2, 0, 1, 1), -0.2);
+  assert.equal(mirroredOmega(-0.4, 2, 3, 2), 0.4);
+  assert.equal(mirroredOmega(0.2, 0, 1, 2), 0.2);
+  assertClose(mirroredOmega(0, 1, 3, 1), 0);
+});
+
+test("composeVelocities ignores planes outside the current dimension", () => {
+  const Q = identity(3);
+  const idle = composeVelocities(
+    Q,
+    [
+      { plane: [0, 5], omega: 0.4 },
+      { plane: [1, 2], omega: 0 },
+      { plane: [-1, 1], omega: 0.3 },
+    ],
+    0.1,
+  );
+  assertMatrixClose(idle, Q, 1e-12);
+  const mixed = composeVelocities(
+    Q,
+    [
+      { plane: [0, 1], omega: 0.5 },
+      { plane: [1, 9], omega: 3 },
+    ],
+    0.1,
+  );
+  assertMatrixClose(mixed, planeRotation(3, 0, 1, 0.05), 1e-12);
 });
 
 test("orthonormalize throws on rank-deficient input", () => {

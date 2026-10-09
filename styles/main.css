@@ -102,8 +102,13 @@ button:focus-visible {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 3.5em;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 3.5em;
+  row-gap: 0.8em;
   align-items: baseline;
+  width: max-content;
+  max-width: calc(100vw - 8vw - 8.5rem);
   font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -272,6 +277,18 @@ button:focus-visible {
   font-style: italic;
 }
 
+#panel .section-caption {
+  margin: 0 0 8px;
+  color: var(--whisper);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+#panel .section-caption:empty {
+  display: none;
+}
+
 #panel .formula {
   margin-top: 12px;
   padding-top: 10px;
@@ -295,6 +312,11 @@ button:focus-visible {
   margin-right: 6px;
 }
 
+#panel .gray-toggle.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Pause indicator: quiet, and immune to the idle fade -------------------------- */
 
 #paused {
@@ -315,6 +337,20 @@ noscript {
   top: 50%;
   width: 100%;
   text-align: center;
+}
+
+/* The plane grid sits bottom-left. Before the bar can cover it, lift the
+   grid and let the bar use the full width. The 640px query below recentres
+   the grid and stacks the bar. */
+@media (max-width: 1200px) {
+  #planes {
+    bottom: auto;
+    top: 46%;
+    transform: translateY(-50%);
+  }
+  #bar {
+    max-width: calc(100vw - 8vw);
+  }
 }
 
 @media (max-width: 640px) {

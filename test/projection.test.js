@@ -4,9 +4,25 @@ import {
   perspectiveStep,
   orthographicStep,
   project,
+  projectGroups,
 } from "../src/core/projection.js";
 import { hypercube, cellVertices } from "../src/core/hypercube.js";
 import { assertClose } from "./helpers.js";
+
+test("extraDepths lists every pre-3D axis, highest first", () => {
+  const vertices = hypercube(6).vertices;
+  const { depthW, extraDepths } = project(vertices, { mode: "orthographic" });
+  assert.equal(extraDepths.length, 3);
+  assert.deepEqual(extraDepths[0], depthW);
+  for (let i = 0; i < vertices.length; i++) {
+    assert.equal(extraDepths[0][i], vertices[i][5]);
+    assert.equal(extraDepths[1][i], vertices[i][4]);
+    assert.equal(extraDepths[2][i], vertices[i][3]);
+  }
+  const low = project(hypercube(3).vertices, { mode: "perspective" });
+  assert.equal(low.extraDepths, null);
+  assert.equal(low.depthW, null);
+});
 
 test("orthographicStep drops exactly the last coordinate", () => {
   const { p, depth } = orthographicStep([1, 2, 3, 4]);
@@ -153,4 +169,14 @@ test("stopAt 3 residual z matches full-cascade depth3 at the frontal pose", () =
   for (let k = 0; k < vertices.length; k++) {
     assertClose(mid.points[k][2], full.depth3[k]);
   }
+});
+
+test("projectGroups shares one camera and keeps an empty group null", () => {
+  const vertices = hypercube(4).vertices;
+  const alone = project(vertices, { mode: "schlegel" });
+  const [same, empty] = projectGroups([vertices, []], { mode: "schlegel" });
+  assert.equal(empty, null);
+  assert.deepEqual(same.points, alone.points);
+  assert.deepEqual(same.depth3, alone.depth3);
+  assert.deepEqual(same.extraDepths, alone.extraDepths);
 });

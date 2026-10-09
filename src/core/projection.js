@@ -35,9 +35,10 @@
 // are positive, and their generally unequal factors keep the two images on
 // opposite rays. This hands the straddle to the next stage, while
 // maxDepth <= extent bounds each stage's magnification by
-// 1 + 1/CLIP_MARGIN. Every reachable cloud qualifies: the hypercube and the
-// net's central cell contain exact antipodes initially, and rotations and the
-// mirror's axis scaling are linear and odd.
+// 1 + 1/CLIP_MARGIN. The hypercube and the net's central cell qualify: they
+// contain exact antipodes, and rotations and the mirror's axis scaling are
+// linear and odd. A diagonal section qualifies for this half only when it is
+// centrally symmetric. The finite-scale bound does not need the pair.
 
 export function perspectiveStep(v, distance) {
   const depth = v[v.length - 1];
@@ -65,6 +66,10 @@ export function defaultDistance(d) {
 // already are. At the frontal Schlegel first stage the margin is the whole
 // viewpoint-to-facet distance (giving the classic ~4:1 nesting); for every
 // other stage it is only a safety floor beneath the base distance.
+// At the frontal Schlegel first stage the scale ratio between the near
+// facet (w = +1/2) and the far one (w = −1/2) is (D + 1/2) / (D − 1/2)
+// = 1.35/0.35 = 27/7 ≈ 3.86. The nesting measured on the drawing is larger
+// (~5.7): the far cell shrinks again in the 3→2 stage.
 export const SCHLEGEL_MARGIN = 0.35;
 export const CLIP_MARGIN = 0.35;
 
@@ -86,7 +91,10 @@ export function project(vertices, options = {}) {
   // depth3 is the coordinate consumed by the 3→2 stage; only present on the
   // full cascade. At stopAt 3 that residual z stays in points[k][2].
   const depth3 = n >= 3 && endDim === 2 ? new Array(count) : null;
-  const depthW = n >= 4 ? new Array(count) : null;
+  // Every axis dropped before 3-space, highest first. depthW is the first
+  // of these (the highest axis) and stays for callers that only want it.
+  // Intermediate axes used to be discarded; warmth averages them all.
+  const extraDepths = [];
   const stages = [];
 
   for (let d = n; d > endDim; d--) {
@@ -111,10 +119,15 @@ export function project(vertices, options = {}) {
     }
     stages.push({ d, distance, minDepth, maxDepth, orthographic });
 
+    if (d > 3) {
+      const layer = new Array(count);
+      for (let k = 0; k < count; k++) layer[k] = points[k][d - 1];
+      extraDepths.push(layer);
+    }
+
     for (let k = 0; k < count; k++) {
       const p = points[k];
       const depth = p[d - 1];
-      if (first && depthW) depthW[k] = depth;
       if (d === 3 && depth3) depth3[k] = depth;
       if (!orthographic) {
         const scale = distance / (distance - depth);
@@ -130,5 +143,39 @@ export function project(vertices, options = {}) {
     }
   }
 
-  return { points, depth3, depthW, stages };
+  const depthW = extraDepths.length > 0 ? extraDepths[0] : null;
+  return {
+    points,
+    depth3,
+    depthW,
+    extraDepths: extraDepths.length > 0 ? extraDepths : null,
+    stages,
+  };
+}
+
+// Project several clouds with one camera. A diagonal section has to share
+// the cube's stages: separate calls would each sit the camera on their own
+// support, and the cut would leave the wire it was taken from. An empty
+// group comes back as null. `project` itself copies the coordinates.
+export function projectGroups(groups, options) {
+  const ranges = [];
+  const flat = [];
+  for (const vertices of groups) {
+    const start = flat.length;
+    if (vertices) for (const v of vertices) flat.push(v);
+    ranges.push([start, flat.length]);
+  }
+  if (flat.length === 0) return ranges.map(() => null);
+  const projected = project(flat, options);
+  const take = (arr, start, end) => (arr ? arr.slice(start, end) : null);
+  return ranges.map(([start, end]) => {
+    if (start === end) return null;
+    return {
+      points: projected.points.slice(start, end),
+      depth3: take(projected.depth3, start, end),
+      extraDepths: projected.extraDepths
+        ? projected.extraDepths.map((layer) => layer.slice(start, end))
+        : null,
+    };
+  });
 }

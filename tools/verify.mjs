@@ -134,6 +134,11 @@ await evaluate(`
 `);
 await press("3"); // mid-turn shrink
 await sleep(200);
+// Pressing p clears a projection preset, and the shrink then drops every
+// plane with j ≥ n. Re-arm a motion so a live loop has something to integrate.
+await evaluate(
+  `[...document.querySelectorAll('#bar button')].find((b) => b.textContent === 'stillness').click(); 0`,
+);
 // Aliveness: Q advances only inside frame(), so a frozen loop (the browser
 // still answers rAF regardless) shows up as a motionless pose.
 const poseA = await evaluate(`JSON.stringify(window.__state.Q)`);
@@ -165,6 +170,58 @@ const FPS_MIN = Number.isFinite(fpsEnv) && fpsEnv > 0 ? fpsEnv : 50;
 let fps = await measureFps();
 if (fps < FPS_MIN) fps = Math.max(fps, await measureFps()); // absorb host-load spikes
 check(`fps >= ${FPS_MIN} at n=6 tumble`, fps >= FPS_MIN, `${fps} fps`);
+
+// The third view must not steal `u`, and the cut must come up without a
+// console error. n is still 6 from the frame-rate pass; the sweep starts
+// at the apex, so the geometry is not the whole cube.
+await evaluate(
+  `[...document.querySelectorAll('#bar button')].find((b) => b.textContent === 'section').click(); 0`,
+);
+await sleep(200);
+const sectionProbe = await evaluate(`(() => {
+  const s = window.__state;
+  return {
+    view: s.view,
+    n: s.n,
+    verts: s.geometry.vertices.length,
+    cut: s.geometry.cut,
+    mirrors: document.querySelectorAll('.plane-dot.mirror').length,
+  };
+})()`);
+check(
+  "section view is a cut, and the mirrors stay",
+  sectionProbe.view === "section" &&
+    sectionProbe.verts < (1 << sectionProbe.n) &&
+    Number.isFinite(sectionProbe.cut) &&
+    sectionProbe.mirrors === sectionProbe.n,
+  JSON.stringify(sectionProbe),
+);
+const sectionLit = await evaluate(`(() => {
+  const c = document.getElementById('scene');
+  const g = c.getContext('2d');
+  const w = c.width, h = c.height;
+  const strips = [
+    g.getImageData(0, 0, w, 3),
+    g.getImageData(0, h - 3, w, 3),
+    g.getImageData(0, 0, 3, h),
+    g.getImageData(w - 3, 0, 3, h),
+  ];
+  let n = 0;
+  for (const s of strips)
+    for (let k = 3; k < s.data.length; k += 4) if (s.data[k] > 10) n++;
+  return n;
+})()`);
+check("section fit keeps the cube inside the frame", sectionLit === 0, `${sectionLit} border px`);
+await evaluate(`document.getElementById('panel-toggle').click(); 0`);
+check(
+  "gray control disabled on the section",
+  (await evaluate(`document.querySelector('#panel .gray-toggle input').disabled`)) === true,
+);
+await evaluate(`document.getElementById('panel-toggle').click(); 0`);
+await press("u");
+check("u from section opens the net", (await evaluate(`window.__state.view`)) === "net");
+await press("u");
+check("u returns to solid", (await evaluate(`window.__state.view`)) === "solid");
 
 check("no console errors", consoleErrors.length === 0, consoleErrors.join(" | "));
 

@@ -13,7 +13,7 @@ import { PRESETS } from "./presets.js";
 const MIN_N = 2;
 const MAX_N = 6;
 const PROJECTIONS = ["perspective", "orthographic", "schlegel"];
-const VIEWS = ["solid", "net"];
+const VIEWS = ["solid", "net", "section"];
 
 export function initControls({ bar, planesEl, canvas, state, actions }) {
   // --- Bottom bar -----------------------------------------------------
@@ -56,8 +56,18 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
   // Off-diagonal dots are the C(n,2) rotation planes; diagonal squares are
   // the n axis mirrors. Together they generate all 2^n·n! symmetries.
   let planeButtons = new Map();
+  // Timers outlive the buttons that armed them. A dimension or view change
+  // rebuilds the grid; a stale timer must not toggle a plane that no longer
+  // exists (and must not clear the preset on the way).
+  const clickTimers = new Set();
+
+  function clearClickTimers() {
+    for (const id of clickTimers) clearTimeout(id);
+    clickTimers.clear();
+  }
 
   function buildPlaneGrid() {
+    clearClickTimers();
     planesEl.textContent = "";
     planeButtons = new Map();
     planesEl.style.gridTemplateColumns = `repeat(${state.n}, auto)`;
@@ -70,8 +80,16 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       // and dropping the active preset on the way.
       let clickTimer = null;
       const b = button("", () => {
-        clearTimeout(clickTimer);
-        clickTimer = setTimeout(() => actions.togglePlane(key), 250);
+        if (clickTimer != null) {
+          clearTimeout(clickTimer);
+          clickTimers.delete(clickTimer);
+        }
+        clickTimer = setTimeout(() => {
+          clickTimers.delete(clickTimer);
+          clickTimer = null;
+          actions.togglePlane(key);
+        }, 250);
+        clickTimers.add(clickTimer);
       });
       b.className = "plane-dot";
       b.dataset.name = name;
@@ -80,12 +98,21 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
         `rotate in the ${name} plane (double-click or Shift+Enter: exact quarter-turn)`,
       );
       b.addEventListener("dblclick", () => {
-        clearTimeout(clickTimer);
+        if (clickTimer != null) {
+          clearTimeout(clickTimer);
+          clickTimers.delete(clickTimer);
+          clickTimer = null;
+        }
         actions.quarterTurn(key);
       });
       b.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && e.shiftKey) {
           e.preventDefault(); // suppress the native click -> toggle
+          if (clickTimer != null) {
+            clearTimeout(clickTimer);
+            clickTimers.delete(clickTimer);
+            clickTimer = null;
+          }
           actions.quarterTurn(key);
         }
       });
@@ -94,8 +121,9 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       planeButtons.set(key, b);
       planesEl.append(b);
     }
-    // Mirrors reflect the object itself: in the net view the unfolded cross
-    // is not mirror-symmetric, so they stay solid-only.
+    // Mirrors reflect the object itself. The net is an unfolding, not a
+    // mirror-symmetric body, so the squares stay off there. The section is
+    // still the cube, and the mirrors keep acting on it.
     if (state.view !== "net") {
       for (let k = 0; k < state.n; k++) {
         const b = button("", () => actions.mirrorAxis(k));
@@ -140,9 +168,11 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       const depthAxis = e.shiftKey && n >= 4 ? n - 1 : Math.min(2, n - 1);
       const hAxis = 0;
       const vAxis = Math.min(1, depthAxis - 1);
+      // Screen y grows downward. Mathematical +y is up, and a positive turn
+      // in (y, depth) lowers the front face, so drag-up (dy < 0) lifts it.
       if (dx) actions.rotateBy(hAxis, depthAxis, dx * 0.006);
       if (dy && vAxis !== depthAxis)
-        actions.rotateBy(vAxis, depthAxis, -dy * 0.006);
+        actions.rotateBy(vAxis, depthAxis, dy * 0.006);
     }
     pointers.set(e.pointerId, cur);
   });
@@ -156,7 +186,11 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
     "wheel",
     (e) => {
       e.preventDefault();
-      actions.dollyBy(Math.exp(e.deltaY * 0.001));
+      // Firefox reports lines (deltaMode 1) and pages (2). Treat a line as
+      // 16px and a page as one viewport, then use the same pixel gain.
+      const unit =
+        e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight || 800 : 1;
+      actions.dollyBy(Math.exp(e.deltaY * unit * 0.001));
     },
     { passive: false },
   );
@@ -172,6 +206,9 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
     else if (e.key === "s") actions.setProjection("schlegel");
     else if (e.key === "g") actions.toggleGray();
     else if (e.key === "u")
+      // Solid and net only. The section is a third view; folding it into
+      // this toggle would make `u` leave a cut for the solid and break the
+      // checks that treat `u` as that pair.
       actions.setView(state.view === "net" ? "solid" : "net");
     else if (e.key === " ") {
       e.preventDefault();
@@ -186,10 +223,11 @@ export function initControls({ bar, planesEl, canvas, state, actions }) {
       const STEP = 0.08;
       if (e.key === "ArrowLeft") actions.rotateBy(0, depthAxis, -STEP);
       else if (e.key === "ArrowRight") actions.rotateBy(0, depthAxis, STEP);
+      // ArrowUp lifts the front face (negative theta). See the drag note.
       else if (e.key === "ArrowUp" && vAxis !== depthAxis)
-        actions.rotateBy(vAxis, depthAxis, STEP);
-      else if (e.key === "ArrowDown" && vAxis !== depthAxis)
         actions.rotateBy(vAxis, depthAxis, -STEP);
+      else if (e.key === "ArrowDown" && vAxis !== depthAxis)
+        actions.rotateBy(vAxis, depthAxis, STEP);
     } else if (e.key === "[") actions.dollyBy(1 / 1.08);
     else if (e.key === "]") actions.dollyBy(1.08);
   });

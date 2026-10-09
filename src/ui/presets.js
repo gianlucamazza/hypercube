@@ -23,7 +23,7 @@ export const PRESETS = [
   },
   {
     name: "tumble",
-    note: "three unequal coupled turns — a slow, aperiodic-looking drift",
+    note: "n ≤ 3: one steady turn (period ≈ 25.2 s at n = 3); n ≥ 4: quasiperiodic on a torus (n = 4, λ ≈ 0.043 and 0.259)",
     velocities(n) {
       const v = [{ plane: [0, 1], omega: 0.21 }];
       if (n >= 3) v.push({ plane: [1, n - 1], omega: 0.134 });

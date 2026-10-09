@@ -177,11 +177,14 @@ export function createXrInput(initialConfig = XR_DEFAULTS) {
             j: depthAxis,
             theta: clampTheta(dx * stickRotate * dt, maxD),
           });
+        // Stick +Y is down. A positive turn in (y, depth) lowers the front
+        // face once mathematical +y is up, so stick-down keeps this sign.
+        // World-space grip travel below stays negated: metres-up already lifts.
         if (dy && vAxis !== depthAxis)
           out.rotate.push({
             i: vAxis,
             j: depthAxis,
-            theta: clampTheta(-dy * stickRotate * dt, maxD),
+            theta: clampTheta(dy * stickRotate * dt, maxD),
           });
       }
       if (edgeButtons(dominant, 3)) {
@@ -327,7 +330,21 @@ export function createXrInput(initialConfig = XR_DEFAULTS) {
   return { step, reset, setConfig, sampleControllers };
 }
 
-// Ray vs sphere hit; returns distance or null.
+// What a lattice hit should do. A double-trigger is also a trigger edge,
+// so the quarter-turn is decided before a single press is armed.
+export function latticeGesture(hit) {
+  if (!hit) return null;
+  const ray = hit.ray;
+  const t = hit.target;
+  if (!ray || !t) return null;
+  if (t.kind === "mirror" && ray.triggerEdge) return { type: "mirror", axis: t.axis };
+  if (t.kind === "plane" && (ray.double || ray.squeezeEdge))
+    return { type: "quarter", key: t.key };
+  if (t.kind === "plane" && ray.triggerEdge) return { type: "arm-toggle", key: t.key };
+  return null;
+}
+
+// Ray vs sphere hit; returns distance or null. `dir` is unit length.
 export function raySphereHit(origin, dir, center, radius) {
   const ox = origin[0] - center[0];
   const oy = origin[1] - center[1];

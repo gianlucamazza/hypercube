@@ -39,16 +39,20 @@ grid in the UI is this formula made visible.
 
 Two rotations in disjoint planes commute and can run simultaneously; with
 equal angles in `xy` and `zw` this is an _isoclinic_ (Clifford) double
-rotation, under which every vertex moves along a great circle of the
-3-sphere — the `isocline` preset.
+rotation. At `n = 4` every vertex then moves along a great circle of the
+3-sphere — the `isocline` preset, and only at that dimension.
 
 Why great circles: the equal-angle double rotation is `R(θ) = cos θ·I +
 sin θ·J` with `J = diag(J₂, J₂)` the block quarter-turn, which is both
 orthogonal and skew (`Jᵀ = −J`), so `⟨v, Jv⟩ = 0` and `|Jv| = |v|`. The
 orbit `cos θ·v + sin θ·Jv` is therefore the circle of radius `|v|` in the
 plane `span{v, Jv}` through the origin — a great circle of the sphere of
-radius `|v|`. At `n = 4` the circumradius is `√4/2 = 1`, so all 16 vertices
-ride great circles of the unit 3-sphere.
+radius `|v|`. This `J = diag(J₂, J₂)` is the n = 4 isocline, `J(x,y,z,w) =
+(−y, x, −w, z)`. The 16 vertices then lie on exactly four such circles, four
+vertices each: `v`, `Jv`, `−v`, `−Jv`. For `n > 4` the same preset still
+spins two disjoint planes at equal speed, but every vertex has a nonzero
+coordinate off those planes (all coordinates are `±1/2`), so the orbit is a
+small circle of the circumsphere, not a great circle.
 
 Plane rotations in general do **not** commute, so a pose cannot be stored
 as a vector of angles: the same angles applied in a different order give a
@@ -68,6 +72,18 @@ first-order Lie–Trotter approximation with an order-dependent commutator error
 For interaction that requests one finite plane turn, `applyPlaneRotation`
 still touches only rows `i` and `j` in `O(n²)`.
 
+The `tumble` preset is kinematics, not a rigid body with inertia: `Ω` is
+prescribed and never evolved by an Euler equation. It is also not chaotic.
+At `n = 2` it is one plane. At `n = 3` the velocities 0.21 in `xy` and 0.134
+in `yz` are a single steady rotation — every 3×3 skew matrix has a
+one-dimensional kernel — with angular speed `√(0.21² + 0.134²) ≈ 0.24911`
+and period `≈ 25.222 s`. At `n = 4` the three velocities 0.21, 0.134 and
+0.083 give two frequencies `λ ≈ 0.04294` and `λ ≈ 0.25904`. The ratio is
+irrational: the quadratic in `μ = λ²` has discriminant `4258617489 / 10¹²`,
+and `4258617489` is not a square, so the pose is quasiperiodic and dense on
+a 2-torus. The beat between the two frequencies is about 29 s. Higher `n`
+carries extra coordinates along; it does not add a chaotic term.
+
 Floating-point drift slowly de-orthogonalizes `Q`; a modified Gram–Schmidt
 pass every ~300 frames restores `Q Qᵀ = I` (the drift test composes 20 000
 rotations — two per simulated frame for 10 000 frames — and checks exactly
@@ -77,7 +93,10 @@ Gram–Schmidt also preserves orientation, so the cleanup keeps `Q` in
 `SO(n)` and never silently reflects the object. Proof: MGS factors the
 drifted matrix as `A = L·Q̂` with `L` lower-triangular whose diagonal holds
 the (positive) row norms, so `det A = det L · det Q̂` with `det L > 0` —
-the determinant's sign survives. `Q` starts at the identity and accumulates
+the determinant's sign survives. The cleanup is not the polar factor: a
+large perturbation is repaired to some rotation of the same determinant,
+not necessarily the nearest one. The drift this loop accumulates is far
+inside the region where the two agree. `Q` starts at the identity and accumulates
 plane rotations (each `det = +1`), hence `det Q = +1` through every
 cleanup. The tests pin both directions: a drifted rotation comes out at
 `det = +1`, the same matrix with a row negated at `det = −1`
@@ -94,15 +113,24 @@ One projection stage consumes the last coordinate of a d-dimensional point:
     orthographic: p = v[0..d−2]
 
 Applying stages repeatedly takes an n-dimensional object to the screen. The
-coordinate consumed at the 3D→2D stage drives depth fading; the coordinate
-consumed at the _first_ stage (the extra dimension) drives the violet–amber
-temperature.
+coordinate consumed at the 3D→2D stage drives depth fading. Every coordinate
+dropped _before_ 3-space drives the violet–amber temperature: each of those
+axes is normalised on its own and the results are averaged, so a magnified
+intermediate axis cannot drown the others. At `n = 4` there is only the
+highest axis, and the temperature is the old `w` channel unchanged.
 
 The cascade may stop early. With `stopAt: 3` the 3→2 stage is omitted and the
-function returns the intermediate 3-space cloud — the same points a WebXR
-renderer places in the headset, with residual `z` carrying the presence that
-the 2D path would have read as `depth3`. Dolly (final-stage camera distance)
-is a no-op in that mode; the immersive path maps dolly to world scale instead.
+function returns the intermediate 3-space cloud — one cloud, shared by both
+eyes. Headset parallax is the ordinary 3D parallax of that projection, not a
+4D baseline between the eyes. Residual `z` carries the presence that the 2D
+path would have read as `depth3`. Dolly (final-stage camera distance) is a
+no-op in that mode; the immersive path maps dolly to world scale instead.
+
+The viewport fit is not part of the rigid motion. It scales the drawing so
+the silhouette stays inside the frame, and it slews toward the new radius
+(a fraction 0.06 of the gap each frame) so the object breathes as it turns.
+A change of geometry or projection snaps. The slew is a display scale; it
+does not alter `Q`.
 
 The three modes differ only in how the stages are configured:
 
@@ -113,10 +141,14 @@ The three modes differ only in how the stages are configured:
   while still honest about the higher dimensions.
 - **schlegel** — in the frontal pose, perspective from a viewpoint just
   outside one facet: a genuine Schlegel projection whose near cell surrounds
-  the far one, giving the classic cube-within-a-cube tesseract diagram. Under
-  a free rotation the camera continues to follow the cloud's supporting
-  feature for visual continuity; except when that feature is a facet, this is
-  a Schlegel-style perspective rather than, strictly, a Schlegel diagram.
+  the far one. At `n = 4`, frontal, the first stage has `D = 0.85`: the near
+  face scales by `17/7` and the far face by `17/27`, a ratio of `27/7 ≈ 3.86`.
+  The nesting measured on the drawing is larger, about 5.7, because the far
+  cell shrinks again in the 3D→2D stage. The property test keeps that drawn
+  ratio inside `[4, 7]`. Under a free rotation the camera continues to follow
+  the cloud's supporting feature for visual continuity; except when that
+  feature is a facet, this is a Schlegel-style perspective rather than,
+  strictly, a Schlegel diagram.
 
 No fixed camera distance is safe in the cascade. Each perspective stage
 multiplies the remaining coordinates by `D / (D − depth)`, so a later stage
@@ -163,7 +195,7 @@ worst scale is
     D / (D − maxDepth) ≤ (maxDepth + margin) / margin
                        ≤ 1 + extent / (0.35 · max(extent, 1)) ≤ 1 + 1/0.35
 
-The hypothesis is discharged for every cloud the app can produce: the
+The hypothesis is discharged for the hypercube and for the net: the
 hypercube and the net's central cell contain exact antipodes, and everything
 applied before projection — the rotation `Q` and the mirror animation's axis
 scaling — is linear and odd. Thus an exact antipodal pair enters the cascade,
@@ -175,11 +207,13 @@ values, 5 400 projections — and of the directed witnesses D1–D6, one per
 failure family.
 
 (A rejected alternative: hardening the formula itself, e.g. `margin =
-0.35 · max(extent, 1, maxDepth)`, would bound magnification even for
-clouds entirely in front of the camera — but no reachable cloud is, so the
-extra branch would be dead code guarding against a theorem's failure.)
+0.35 · max(extent, 1, maxDepth)`, would bound magnification for a cloud
+that does not straddle the camera. The hypercube and the net always
+straddle. A one-sided diagonal section need not, but its points are convex
+combinations of cube vertices and stay inside the same ball, so the extra
+branch stays out.)
 
-Beyond the three projections there is one alternative _view_: the **net**
+Beyond the three projections there are two other views. One is the **net**
 (development) of the n-cube — its `2n` facet cells unfolded into the
 hyperplane where the last coordinate is 0, and embedded back in `R^n` so
 the same rotation and projection pipeline applies unchanged. For `n = 4`
@@ -200,17 +234,100 @@ parent, whose centre sits at distance 1. Interiors never overlap: the
 cells are open unit cubes at distinct integer centres, and an overlap
 would need every centre coordinate to differ by less than 1, i.e. by 0.
 The tests in `test/net.test.js` verify the tree, the shared faces, and the
-disjointness for `n = 2..6`.
+disjointness for `n = 2..6`. The other view is the diagonal section.
 
-## 5. Gray codes — a light that visits every vertex
+## 5. The diagonal section
+
+The section view cuts the n-cube with the affine hyperplane `Σ xᵢ = h`,
+fixed in the body. Coordinates are the usual `±1/2`, so a vertex sum is
+`k − n/2` for `k` positive coordinates, and the two ends of any edge differ
+by exactly 1. `Q` moves the drawing, not the kind of cut. The slice is
+vertices, edges, and faces in `R^n`, built before `Q`, then rotated and
+projected by the same cascade as the cube.
+
+A square never lies in this plane. On every 2-face at least one free
+coordinate enters the sum, and the four vertex sums span an interval of
+length 2, so the intersection is a point or a segment. That segment is an
+edge of the section. When the plane passes through opposite corners of the
+square, the edge is a face diagonal, not a side of the cube: the 1-skeleton
+alone cannot draw the cut.
+
+The 2-faces of the section are its intersections with the cubic 3-cells.
+Each is one convex polygon, or empty. The 3-faces are its intersections
+with the 4-cells. A 4-cell meets the plane in one closed polyhedron — at
+least four polygons, every edge in exactly two of them, one connected
+piece — or in something flatter, which is already a 2-face and is not
+counted again. `section()` returns those polyhedra as `cells`. At `n = 4`
+the tesseract is the only 4-cell, so the list has length 1: the polyhedron
+itself. At `n = 5` the slice is a 4-polytope and the list is its cells.
+A name needs both. The independent tally is built again from the coordinate
+4-cubes, without the welded graph, and a six-sided face has to be a regular
+hexagon. Until both hold, the height stays an f-vector.
+
+Vertices of the cube fall in layers by their sum. At `n = 3` the sums are
+`3/2, 1/2, −1/2, −3/2` with `1, 3, 3, 1` vertices. At `n = 4` they are
+`2, 1, 0, −1, −2` with `1, 4, 6, 4, 1`. At `n = 5` they are
+`5/2, 3/2, 1/2, −1/2, −3/2, −5/2` with `1, 5, 10, 10, 5, 1`. The convex
+hull of one layer is a hypersimplex: the section vertices there are cube
+vertices, and a section edge may be a face diagonal. Strictly between two
+layers the plane misses every vertex and cuts edges. The combinatorial
+type is constant on each such open interval and changes on a layer. The
+height `−h` is the central inversion of `h`.
+
+`test/section.test.js` pins every count below against that tally. Where a
+solid is named, the test also pins one edge length and, for every hexagon,
+the distances side, `side√3`, and `2·side` with multiplicities 6, 6, and 3.
+A second height in the same interval is pinned too: the same f-vector, and,
+where the list says so, two edge lengths. `sectionFigure` returns the name
+only when those metric checks pass, and the panel uses that function.
+
+- `n = 3`, `h = 0`: 6 vertices, 6 equal edges, one hexagon. The regular hexagon.
+- `n = 3`, any height in `1/2 < h < 3/2`: 3 vertices, 3 equal edges, one triangle. The equilateral triangle.
+- `n = 4`, `h = 0`: 6 vertices, 12 equal edges, 8 triangles, one cell, every vertex of degree 4, and each vertex has its antipode `−v` in the slice. The regular octahedron.
+- `n = 4`, any height in `1 < h < 2`: 4 vertices, 6 equal edges, 4 triangles, one cell. The regular tetrahedron. It closes to a point at `h = 2`. Past the apex the section is empty.
+- `n = 4`, `h = ±0.5`: 12 vertices, 18 equal edges of length `√2/2`, four triangles and four regular hexagons, one cell. The Archimedean truncated tetrahedron. The open interval `0 < |h| < 1` keeps this f-vector and not the metric. At `h = 0.3` and at `h = 0.7` the 18 edges fall into two lengths, six of one and twelve of the other, and the hexagons are not regular. The name is the symmetric height only.
+
+At `n = 5` each full slice below has Euler characteristic `V − E + F − C = 0`.
+
+- The apex `|h| = 5/2` is one cube vertex. It is not named. Past it the section is empty.
+- The open interval `3/2 < |h| < 5/2`, and the layer `|h| = 3/2`: 5 vertices, 10 equal edges, 10 triangles, five tetrahedral cells, every vertex of degree 4. The regular 4-simplex, also called the regular 5-cell. The length depends on the height: `√2/2` at `|h| = 2`, and `√2` on the layer. There the five vertices are cube vertices — four coordinates `+1/2` at `h = 3/2`, and one coordinate `+1/2` at `h = −3/2` — and the edges are face diagonals. One length is the definition, so the name covers the interval and the layer, and not the apex.
+- The open interval `1/2 < |h| < 3/2` has one f-vector: 20 vertices, 40 edges, 20 triangles and 10 hexagons, 10 cells — five tetrahedra and five truncated tetrahedra — and every vertex of degree 4. Equal edges and regular hexagons hold only at `|h| = 1`. There the edge is `√2/2`. Each 12-vertex cell has pair distances `side`, `side√3`, `2·side`, and `side√5` with multiplicities 18, 24, 12, and 12. That is the truncated 5-cell. At `h = 1.2` the same f-vector has two edge lengths, ten of one and thirty of the other, and the hexagons fail the regular tally. At `h = 0.8` the edges likewise fall into two lengths. The name is not the interval.
+- The layer `|h| = 1/2`: 10 vertices, 30 equal edges of length `√2`, 30 triangles, 10 cells — five regular tetrahedra and five regular octahedra — every vertex of degree 6. Each octahedron has 12 edges and three opposite pairs at `side√2 = 2`, about its own centre. The slice does not contain `−v` for its vertices. The ten vertices are the cube vertices with three coordinates `+1/2` when `h = 1/2`, and with two when `h = −1/2`: the hypersimplices `Δ_{5,3}` and `Δ_{5,2}` after the shift `yᵢ = xᵢ + 1/2`. That is the rectified 5-cell.
+- The open interval `|h| < 1/2` has one f-vector: 30 vertices, 60 edges, 20 triangles and 20 hexagons, 10 cells, each a truncated tetrahedron, every vertex of degree 4. Equal edges, regular hexagons, and an antipode `−v` for every vertex hold only at `h = 0`. There the edge is `√2/2` and each cell has the pair distances of the truncated tetrahedron above. That is the bitruncated 5-cell. At `h = 0.2` the sixty edges split into two lengths of thirty, and the hexagons are not regular.
+
+Above `n = 5` the knife still cuts, the cell count is still computed, and
+the independent tally still has to agree. No name is assigned.
+
+The cube stays under the slice as a faint wire. Both clouds are projected
+with one camera, so a cut vertex remains on the edge it came from. The
+Gray-code comet indexes cube vertices and stays off. Mirrors and the
+velocity presets still act on the cube. The height is its own motion,
+`0.08` per second, from the apex `h = n/2` down to `−n/2` and back — not a
+slider. Pause holds the knife, and the pose then stores that height as
+`cut`. A playing sweep leaves `cut` out of the URL. The key is not `cam`,
+and it is not the VR stick.
+
+The central slices (`h = 0`) are centrally symmetric, so they meet the
+opposite-ray hypothesis of section 4. At `n = 3` that is the hexagon, at
+`n = 4` the octahedron, and at `n = 5` the bitruncated 5-cell. A one-sided
+slice does not: the triangle, the tetrahedron, the apex, the truncated
+tetrahedron, the 4-simplex, the truncated 5-cell, and the rectified 5-cell.
+Every scale is still finite: `D − depth` is at least the margin for any
+cloud. The magnification bound is not claimed at those heights.
+
+## 6. Gray codes — a light that visits every vertex
 
 The binary-reflected Gray code `g(i) = i XOR (i >> 1)` enumerates all `2^n`
 indices so that consecutive values differ in exactly one bit — that is, it
 is a Hamiltonian cycle on `Q_n`. The comet in the UI walks this cycle at
 one vertex per second: a single point of light that visits every vertex of
-the hypercube, changing one coordinate at a time, and returns home.
+the hypercube, changing one coordinate at a time, and returns home. The
+trail is only the part already travelled — the partial current edge back to
+its start, then full edges behind the head. Nothing is drawn ahead of the
+head. Pause, and a reduced-motion preference that starts the loop paused,
+freeze this clock; the timestamp itself keeps running.
 
-## 6. The symmetry group B_n
+## 7. The symmetry group B_n
 
 The full symmetry group of the n-cube is the hyperoctahedral group `B_n`:
 every symmetry is a _signed permutation_ — permute the axes (`n!` ways),
@@ -225,7 +342,25 @@ diagonal are the `C(n,2)` rotation planes.
 
 A mirror cannot be reached by rotation (it reverses orientation), so the
 interface animates it as a passage: the coordinate scales from `+1` through
-`0` to `−1`, and the object collapses onto its `(n−1)`-dimensional shadow
-before re-inflating reflected. Since the vertex set is setwise invariant
-under every element of `B_n`, the geometry afterwards is unchanged — what
-the reflection reverses is the motion, which continues mirror-imaged.
+`0` to `−1` by `s = cos(π t)`, and the object collapses onto its
+`(n−1)`-dimensional shadow before re-inflating reflected. The scale is
+applied to the body before `Q`. The vertex set is invariant under the full
+reflection, so the unlabelled wireframe at `s = −1` matches `s = +1`, and
+the scale is cleared on the next frame.
+
+`Q` is not conjugated. Absorbing the reflection into `Q` would make
+`det Q = −1`, and the Gram–Schmidt cleanup preserves the sign of the
+determinant, so the pose would leave `SO(n)`. What changes at the end of
+the animation is the velocity: `Ω′ = R Ω R` for `R` the reflection in that
+axis. Planes that contain the axis reverse their `ω`; planes disjoint from
+it commute with `R` and keep their sense. If any plane flipped, the named
+preset is cleared, because the preset no longer describes the motion. A
+quarter-turn already in progress stores a direction rather than an absolute
+target — flipping the stored angle would jump — so only that direction
+changes sign, and the progress is left where it is.
+
+The comet is indexed by vertex. At `s = −1` vertex `i` sits where vertex
+`i XOR (1 << axis)` sits when the scale is gone. Clearing the scale
+therefore pops the comet by one edge of the Gray cycle whenever the code
+is on. A continuous relabeling cannot stay on the binary-reflected Gray
+code in general, so the index stays continuous and the snap is one edge.

@@ -2,9 +2,9 @@
 // Thick camera-facing edge quads, Schlegel face veils, comet head, diegetic
 // B_n lattice, enter ease, and void fog — zero dependencies.
 
+import { hypercube } from "../core/hypercube.js";
 import { mulMatVec } from "../core/matrix.js";
-import { project } from "../core/projection.js";
-import { grayCode } from "../core/combinatorics.js";
+import { projectGroups } from "../core/projection.js";
 import {
   edgeColor,
   edgeHalfWidth,
@@ -14,6 +14,8 @@ import {
   ICE_RGB,
 } from "./palette.js";
 import { XR_DEFAULTS } from "./xr-config.js";
+import { cometPath } from "./comet.js";
+import { meanWarmth } from "./warmth.js";
 
 const VS = `
 attribute vec3 aPos;
@@ -37,20 +39,8 @@ void main() {
 }
 `;
 
-const COMET_SPEED = 1;
-const COMET_TRAIL = 10;
 const FLOATS_PER_VERT = 7;
 const STRIDE = FLOATS_PER_VERT * 4;
-
-const grayCache = new Map();
-function grayCycle(n) {
-  let c = grayCache.get(n);
-  if (!c) {
-    c = grayCode(n);
-    grayCache.set(n, c);
-  }
-  return c;
-}
 
 export function defaultWorldOffset(floorRelative, cfg = XR_DEFAULTS) {
   return {
@@ -108,9 +98,12 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
   let warmScratch = null;
 
   let fitScale = null;
-  let fitGeometry = null;
-  let fitMode = null;
+  let fitKey = null;
   let sessionStart = null;
+  let cubeCache = null;
+  let cubeN = -1;
+  let cometNow = 0;
+  let cometStamp = null;
   let cfg = { ...XR_DEFAULTS, ...initialConfig };
 
   function setConfig(next) {
@@ -142,31 +135,51 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
     if (!pose) return null;
 
     const { geometry, Q, projection: mode, dolly, mirrorScale } = state;
+    const sectionView = state.view === "section";
 
-    let source = geometry.vertices;
-    if (mirrorScale) {
-      const { axis, s } = mirrorScale;
-      source = source.map((v) => {
-        const w = v.slice();
-        w[axis] *= s;
-        return w;
+    const orient = (vertices) => {
+      if (!vertices || vertices.length === 0) return [];
+      return vertices.map((v) => {
+        const w = mirrorScale ? v.slice() : v;
+        if (mirrorScale) w[mirrorScale.axis] *= mirrorScale.s;
+        return mulMatVec(Q, w);
       });
-    }
+    };
 
-    const rotated = source.map((v) => mulMatVec(Q, v));
-    const { points, depthW } = project(rotated, { mode, stopAt: 3 });
+    if (sectionView && cubeN !== state.n) {
+      cubeCache = hypercube(state.n);
+      cubeN = state.n;
+    }
+    const groups = [];
+    if (sectionView) groups.push(orient(cubeCache.vertices));
+    groups.push(orient(geometry.vertices));
+    const projected = projectGroups(groups, { mode, stopAt: 3 });
+    const ghost = sectionView ? projected[0] : null;
+    const main = projected[projected.length - 1];
+    const points = main ? main.points : [];
+    const extraDepths = main ? main.extraDepths : null;
+
+    if (cometStamp == null) cometStamp = time;
+    if (!state.paused) cometNow += Math.max(0, time - cometStamp);
+    cometStamp = time;
 
     let maxR = 0;
-    for (const p of points) {
-      const r = Math.hypot(p[0], p[1], p[2]);
-      if (r > maxR) maxR = r;
-    }
+    const consider = (pts) => {
+      if (!pts) return;
+      for (const p of pts) {
+        const r = Math.hypot(p[0], p[1], p[2] ?? 0);
+        if (r > maxR) maxR = r;
+      }
+    };
+    consider(ghost && ghost.points);
+    consider(points);
     const targetRadius = cfg.targetRadius;
     const target = maxR > 1e-9 ? targetRadius / maxR : (fitScale ?? 1);
-    if (fitScale == null || fitGeometry !== geometry || fitMode !== mode) {
+    // Same key as the canvas: the sweeping cut must not snap the fit.
+    const nextKey = `${state.n}:${state.view}:${mode}`;
+    if (fitScale == null || fitKey !== nextKey) {
       fitScale = target;
-      fitGeometry = geometry;
-      fitMode = mode;
+      fitKey = nextKey;
     } else {
       fitScale += (target - fitScale) * 0.06;
     }
@@ -188,17 +201,22 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
     if (!depthScratch || depthScratch.length !== nPts)
       depthScratch = new Float32Array(nPts);
     normalizeInto(points, 2, depthScratch);
-    if (depthW) {
+    const warm = meanWarmth(extraDepths);
+    if (warm) {
       if (!warmScratch || warmScratch.length !== nPts)
         warmScratch = new Float32Array(nPts);
-      normalizeArrInto(depthW, warmScratch);
+      for (let i = 0; i < nPts; i++) warmScratch[i] = warm[i];
     }
 
-    const cometN = state.gray && state.view !== "net" ? geometry.n : 0;
-    const faces =
-      mode === "schlegel" && state.view !== "net" && geometry.faces
+    const cometN = state.gray && state.view === "solid" ? geometry.n : 0;
+    const faces = sectionView
+      ? geometry.faces || []
+      : mode === "schlegel" && state.view !== "net" && geometry.faces
         ? geometry.faces
         : [];
+    const ghostEdges = ghost ? cubeCache.edges : null;
+    const apex =
+      sectionView && points.length === 1 && geometry.edges.length === 0;
 
     // Camera position in world (viewer) for billboard extrusion — use first view.
     const view0 = pose.views[0];
@@ -213,6 +231,8 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
       cometN,
       lattice.length,
       rays.length,
+      ghostEdges ? ghostEdges.length : 0,
+      apex,
     );
     if (scratch.length < needed) scratch = new Float32Array(needed);
 
@@ -224,18 +244,22 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
       geometry.edges,
       faces,
       depthScratch,
-      depthW ? warmScratch : null,
+      warm ? warmScratch : null,
       scale,
       cometN,
-      time,
+      cometNow,
       camX / Math.max(scale, 1e-9),
       camY / Math.max(scale, 1e-9),
       camZ / Math.max(scale, 1e-9),
+      [camX, camY, camZ],
       lattice,
       latticeOpacity,
       hoverKey,
       rays,
       cfg,
+      ghost ? ghost.points : null,
+      ghostEdges,
+      apex,
     );
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
@@ -284,18 +308,27 @@ export function createXrRenderer(initialConfig = XR_DEFAULTS) {
   return { gl, canvas, draw, beginSession, setConfig, defaultWorldOffset };
 }
 
-function estimateFloats(edgeCount, faces, cometN, latticeCount, rayCount) {
-  let tris = edgeCount * 2; // 2 tris per edge
+function estimateFloats(
+  edgeCount,
+  faces,
+  cometN,
+  latticeCount,
+  rayCount,
+  ghostEdges = 0,
+  apex = false,
+) {
+  let tris = (edgeCount + ghostEdges) * 2; // 2 tris per edge
+  if (apex) tris += 2;
   for (const f of faces) {
     if (f.length >= 3) tris += f.length - 2;
   }
   if (cometN > 0) {
     const len = 1 << cometN;
-    tris += (len + Math.min(COMET_TRAIL, len - 1)) * 2; // trail as thick edges
+    tris += (len + Math.min(10, len - 1)) * 2; // cycle + trail as thick edges
     tris += 4; // comet head (two quads: core + glow)
   }
-  // lattice: each target ~ 2 tris (quad); rays: 1 thick segment
-  tris += latticeCount * 2;
+  // lattice: disc fan (8) or square (2); rays: 1 thick segment
+  tris += latticeCount * 8;
   tris += rayCount * 2;
   return tris * 3 * FLOATS_PER_VERT;
 }
@@ -315,11 +348,15 @@ function fillMesh(
   camX,
   camY,
   camZ,
+  camM,
   lattice,
   latticeOpacity,
   hoverKey,
   rays,
   cfg = XR_DEFAULTS,
+  ghostPoints = null,
+  ghostEdges = null,
+  apex = false,
 ) {
   const edgeCount = edges.length;
   let o = 0;
@@ -332,20 +369,67 @@ function fillMesh(
     floats[o++] = b;
     floats[o++] = a;
   };
-  // Unscaled push for world-space UI (lattice already in metres relative… wait
-  // lattice is in world metres absolute — we draw in object-local then world
-  // matrix translates. So lattice positions must be relative to object origin.
-  // Host builds lattice with objectOrigin absolute; we convert by subtracting
-  // origin before draw. Simpler: host passes lattice already object-relative.
-  const pushW = (x, y, z, r, g, b, a) => {
-    floats[o++] = x;
-    floats[o++] = y;
-    floats[o++] = z;
-    floats[o++] = r;
-    floats[o++] = g;
-    floats[o++] = b;
-    floats[o++] = a;
+  // Farther from the headset first. Object-z matches that only while the
+  // viewer stays on the +z side; walking around must not use it.
+  // camX/Y/Z are in projection units, the same space as `points`.
+  const camDist2 = (p) => {
+    const dx = p[0] - camX;
+    const dy = p[1] - camY;
+    const dz = (p[2] ?? 0) - camZ;
+    return dx * dx + dy * dy + dz * dz;
   };
+  const [camMX, camMY, camMZ] = camM;
+
+  // The cube under the knife, first, so the slice paints over it.
+  // Fixed ice, low alpha, thinner than the section's own edges.
+  if (ghostPoints && ghostEdges && ghostEdges.length) {
+    const hw = (cfg.edgeHalfWidthMin * 0.45) / Math.max(scale, 1e-9);
+    for (let i = 0; i < ghostEdges.length; i++) {
+      const [ia, ib] = ghostEdges[i];
+      const pa = ghostPoints[ia];
+      const pb = ghostPoints[ib];
+      o = emitQuad(
+        floats,
+        o,
+        scale,
+        pa[0],
+        pa[1],
+        pa[2] ?? 0,
+        pb[0],
+        pb[1],
+        pb[2] ?? 0,
+        hw,
+        camX,
+        camY,
+        camZ,
+        ICE_RGB[0],
+        ICE_RGB[1],
+        ICE_RGB[2],
+        0.14,
+      );
+    }
+  }
+
+  if (apex && points.length === 1) {
+    const p = points[0];
+    const [r, g, b] = accentRgba(1);
+    o = emitBillboard(
+      floats,
+      o,
+      scale,
+      p[0],
+      p[1],
+      p[2] ?? 0,
+      0.006 / Math.max(scale, 1e-9),
+      camX,
+      camY,
+      camZ,
+      r,
+      g,
+      b,
+      0.95,
+    );
+  }
 
   // --- Faces (painter far→near) ------------------------------------------
   if (faces.length > 0) {
@@ -358,9 +442,9 @@ function fillMesh(
       const fb = faces[ib];
       let da = 0;
       let db = 0;
-      for (const v of fa) da += depthT[v];
-      for (const v of fb) db += depthT[v];
-      return da / fa.length - db / fb.length;
+      for (const v of fa) da += camDist2(points[v]);
+      for (const v of fb) db += camDist2(points[v]);
+      return db / fb.length - da / fa.length;
     });
     for (let fi = 0; fi < faces.length; fi++) {
       const face = faces[faceOrder[fi]];
@@ -393,9 +477,17 @@ function fillMesh(
   edgeOrder.sort((ia, ib) => {
     const ea = edges[ia];
     const eb = edges[ib];
-    const da = (depthT[ea[0]] + depthT[ea[1]]) / 2;
-    const db = (depthT[eb[0]] + depthT[eb[1]]) / 2;
-    return da - db;
+    const ma = [
+      (points[ea[0]][0] + points[ea[1]][0]) * 0.5,
+      (points[ea[0]][1] + points[ea[1]][1]) * 0.5,
+      (points[ea[0]][2] + points[ea[1]][2]) * 0.5,
+    ];
+    const mb = [
+      (points[eb[0]][0] + points[eb[1]][0]) * 0.5,
+      (points[eb[0]][1] + points[eb[1]][1]) * 0.5,
+      (points[eb[0]][2] + points[eb[1]][2]) * 0.5,
+    ];
+    return camDist2(mb) - camDist2(ma);
   });
 
   for (let i = 0; i < edgeCount; i++) {
@@ -431,68 +523,38 @@ function fillMesh(
 
   // --- Comet --------------------------------------------------------------
   if (cometN > 0) {
-    const cycle = grayCycle(cometN);
-    const len = cycle.length;
+    const path = cometPath(cometN, time);
+    const { cycle, len } = path;
     const [ar, ag, ab] = accentRgba(1);
     const hw = 0.0012 / Math.max(scale, 1e-9);
+    const seg = (ia, ib, t0, t1) => {
+      const pa = points[ia];
+      const pb = points[ib];
+      return [
+        pa[0] + (pb[0] - pa[0]) * t0,
+        pa[1] + (pb[1] - pa[1]) * t0,
+        pa[2] + (pb[2] - pa[2]) * t0,
+        pa[0] + (pb[0] - pa[0]) * t1,
+        pa[1] + (pb[1] - pa[1]) * t1,
+        pa[2] + (pb[2] - pa[2]) * t1,
+      ];
+    };
     for (let k = 0; k < len; k++) {
-      const pa = points[cycle[k]];
-      const pb = points[cycle[(k + 1) % len]];
+      const [ax, ay, az, bx, by, bz] = seg(cycle[k], cycle[(k + 1) % len], 0, 1);
+      o = emitQuad(floats, o, scale, ax, ay, az, bx, by, bz, hw, camX, camY, camZ, ar, ag, ab, 0.08);
+    }
+    for (const piece of path.segments) {
+      const [ax, ay, az, bx, by, bz] = seg(piece.from, piece.to, piece.t0, piece.t1);
       o = emitQuad(
-        floats,
-        o,
-        scale,
-        pa[0],
-        pa[1],
-        pa[2],
-        pb[0],
-        pb[1],
-        pb[2],
-        hw,
-        camX,
-        camY,
-        camZ,
-        ar,
-        ag,
-        ab,
-        0.08,
+        floats, o, scale, ax, ay, az, bx, by, bz, hw * 1.2,
+        camX, camY, camZ, ar, ag, ab, piece.fade * 0.55,
       );
     }
-    const pos = (time * COMET_SPEED) % len;
-    const head = Math.floor(pos);
-    const frac = pos - head;
-    const wrap = (i) => ((i % len) + len) % len;
-    const trail = Math.min(COMET_TRAIL, len - 1);
-    for (let k = 0; k < trail; k++) {
-      const pa = points[cycle[wrap(head - k)]];
-      const pb = points[cycle[wrap(head - k + 1)]];
-      const fade = (1 - k / trail) * 0.55;
-      o = emitQuad(
-        floats,
-        o,
-        scale,
-        pa[0],
-        pa[1],
-        pa[2],
-        pb[0],
-        pb[1],
-        pb[2],
-        hw * 1.2,
-        camX,
-        camY,
-        camZ,
-        ar,
-        ag,
-        ab,
-        fade,
-      );
-    }
-    // Head + glow billboards at interpolated position.
-    const a = points[cycle[head % len]];
-    const b = points[cycle[(head + 1) % len]];
-    const hx = a[0] + (b[0] - a[0]) * frac;
-    const hy = a[1] + (b[1] - a[1]) * frac;
-    const hz = a[2] + (b[2] - a[2]) * frac;
+    const a = points[path.from];
+    const b = points[path.to];
+    const hx = a[0] + (b[0] - a[0]) * path.frac;
+    const hy = a[1] + (b[1] - a[1]) * path.frac;
+    const hz = a[2] + (b[2] - a[2]) * path.frac;
     o = emitBillboard(floats, o, scale, hx, hy, hz, 0.012 / scale, camX, camY, camZ, ar, ag, ab, 0.35);
     o = emitBillboard(floats, o, scale, hx, hy, hz, 0.005 / scale, camX, camY, camZ, ar, ag, ab, 0.95);
   }
@@ -518,10 +580,11 @@ function fillMesh(
       }
       const hitR = cfg.latticeHitR;
       const s = hover ? hitR * 1.25 : hitR * 0.85;
+      // Both markers face the headset. Planes read as discs, mirrors as squares.
       if (t.kind === "mirror") {
-        o = emitSquare(floats, o, x, y, z, s, r, g, b, a, pushW);
+        o = emitBillboard(floats, o, 1, x, y, z, s, camMX, camMY, camMZ, r, g, b, a);
       } else {
-        o = emitBillboard(floats, o, 1, x, y, z, s, 0, 0, 1, r, g, b, a, pushW);
+        o = emitDisc(floats, o, x, y, z, s, camMX, camMY, camMZ, r, g, b, a);
       }
     }
   }
@@ -533,7 +596,7 @@ function fillMesh(
     // host passing object-relative ray segments.
     const [ox, oy, oz] = ray.origin;
     const [dx, dy, dz] = ray.direction;
-    const len = ray.length ?? 0.8;
+    const len = ray.length ?? 3.2;
     o = emitQuadRaw(
       floats,
       o,
@@ -544,9 +607,9 @@ function fillMesh(
       oy + dy * len,
       oz + dz * len,
       0.001,
-      0,
-      1,
-      0,
+      camMX,
+      camMY,
+      camMZ,
       ICE_RGB[0],
       ICE_RGB[1],
       ICE_RGB[2],
@@ -625,27 +688,16 @@ function emitQuadRaw(floats, o, ax, ay, az, bx, by, bz, hw, camX, camY, camZ, r,
   return o;
 }
 
-function emitBillboard(floats, o, scale, x, y, z, half, camX, camY, camZ, r, g, b, a, pushFn) {
-  // Camera-facing quad in projection units (or world if pushFn given).
-  const usePush = pushFn != null;
-  const px = usePush ? x : x * scale;
-  const py = usePush ? y : y * scale;
-  const pz = usePush ? z : z * scale;
-  const h = usePush ? half : half * scale;
-  // Build orthonormal basis facing camera.
-  let zx = (usePush ? 0 : camX * scale) - px;
-  let zy = (usePush ? 0 : camY * scale) - py;
-  let zz = (usePush ? 1 : camZ * scale) - pz;
-  if (usePush) {
-    zx = 0;
-    zy = 0;
-    zz = 1; // face +Z in object frame for lattice
-  }
+// Orthonormal frame of the plane facing the camera. right × up points at it.
+function cameraBasis(px, py, pz, camX, camY, camZ) {
+  let zx = camX - px;
+  let zy = camY - py;
+  let zz = camZ - pz;
   let zl = Math.hypot(zx, zy, zz) || 1;
   zx /= zl;
   zy /= zl;
   zz /= zl;
-  // right ≈ worldUp × z
+  // right ≈ world up × forward
   let rx = -zz;
   let ry = 0;
   let rz = zx;
@@ -659,26 +711,38 @@ function emitBillboard(floats, o, scale, x, y, z, half, camX, camY, camZ, r, g, 
   rx /= rl;
   ry /= rl;
   rz /= rl;
-  // up = z × right
-  let ux = zy * rz - zz * ry;
-  let uy = zz * rx - zx * rz;
-  let uz = zx * ry - zy * rx;
-  const write = (ox, oy, oz) => {
-    if (usePush) {
-      pushFn(ox, oy, oz, r, g, b, a);
-      // pushFn writes 7 floats via closure... actually pushW increments o externally.
-      // We need different approach — write directly.
-    }
-    floats[o++] = ox;
-    floats[o++] = oy;
-    floats[o++] = oz;
-    floats[o++] = r;
-    floats[o++] = g;
-    floats[o++] = b;
-    floats[o++] = a;
-  };
-  // When usePush, o is still managed here; pushFn unused for write path.
-  void pushFn;
+  const ux = zy * rz - zz * ry;
+  const uy = zz * rx - zx * rz;
+  const uz = zx * ry - zy * rx;
+  return { rx, ry, rz, ux, uy, uz };
+}
+
+function writeVert(floats, o, x, y, z, r, g, b, a) {
+  floats[o++] = x;
+  floats[o++] = y;
+  floats[o++] = z;
+  floats[o++] = r;
+  floats[o++] = g;
+  floats[o++] = b;
+  floats[o++] = a;
+  return o;
+}
+
+function emitBillboard(floats, o, scale, x, y, z, half, camX, camY, camZ, r, g, b, a) {
+  // Camera-facing square. `scale` converts projection units; pass 1 when
+  // x/y/z and the camera are already in metres (lattice mirrors).
+  const px = x * scale;
+  const py = y * scale;
+  const pz = z * scale;
+  const h = half * scale;
+  const { rx, ry, rz, ux, uy, uz } = cameraBasis(
+    px,
+    py,
+    pz,
+    camX * scale,
+    camY * scale,
+    camZ * scale,
+  );
   const c00x = px - rx * h - ux * h;
   const c00y = py - ry * h - uy * h;
   const c00z = pz - rz * h - uz * h;
@@ -691,32 +755,50 @@ function emitBillboard(floats, o, scale, x, y, z, half, camX, camY, camZ, r, g, 
   const c01x = px - rx * h + ux * h;
   const c01y = py - ry * h + uy * h;
   const c01z = pz - rz * h + uz * h;
-  write(c00x, c00y, c00z);
-  write(c10x, c10y, c10z);
-  write(c11x, c11y, c11z);
-  write(c00x, c00y, c00z);
-  write(c11x, c11y, c11z);
-  write(c01x, c01y, c01z);
+  o = writeVert(floats, o, c00x, c00y, c00z, r, g, b, a);
+  o = writeVert(floats, o, c10x, c10y, c10z, r, g, b, a);
+  o = writeVert(floats, o, c11x, c11y, c11z, r, g, b, a);
+  o = writeVert(floats, o, c00x, c00y, c00z, r, g, b, a);
+  o = writeVert(floats, o, c11x, c11y, c11z, r, g, b, a);
+  o = writeVert(floats, o, c01x, c01y, c01z, r, g, b, a);
   return o;
 }
 
-function emitSquare(floats, o, x, y, z, half, r, g, b, a, _pushW) {
-  // Axis-aligned square in XY (mirror markers).
-  const write = (px, py, pz) => {
-    floats[o++] = px;
-    floats[o++] = py;
-    floats[o++] = pz;
-    floats[o++] = r;
-    floats[o++] = g;
-    floats[o++] = b;
-    floats[o++] = a;
-  };
-  write(x - half, y - half, z);
-  write(x + half, y - half, z);
-  write(x + half, y + half, z);
-  write(x - half, y - half, z);
-  write(x + half, y + half, z);
-  write(x - half, y + half, z);
+// Eight-triangle fan in the camera plane. Positions are already metres.
+function emitDisc(floats, o, x, y, z, radius, camX, camY, camZ, r, g, b, a) {
+  const { rx, ry, rz, ux, uy, uz } = cameraBasis(x, y, z, camX, camY, camZ);
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2;
+    const a1 = ((i + 1) / n) * Math.PI * 2;
+    const c0 = Math.cos(a0);
+    const s0 = Math.sin(a0);
+    const c1 = Math.cos(a1);
+    const s1 = Math.sin(a1);
+    o = writeVert(floats, o, x, y, z, r, g, b, a);
+    o = writeVert(
+      floats,
+      o,
+      x + (rx * c0 + ux * s0) * radius,
+      y + (ry * c0 + uy * s0) * radius,
+      z + (rz * c0 + uz * s0) * radius,
+      r,
+      g,
+      b,
+      a,
+    );
+    o = writeVert(
+      floats,
+      o,
+      x + (rx * c1 + ux * s1) * radius,
+      y + (ry * c1 + uy * s1) * radius,
+      z + (rz * c1 + uz * s1) * radius,
+      r,
+      g,
+      b,
+      a,
+    );
+  }
   return o;
 }
 
@@ -736,26 +818,6 @@ function normalizeInto(points, axis, out) {
   }
   for (let i = 0; i < points.length; i++) {
     const v = points[i][axis];
-    out[i] = Number.isFinite(v) ? (v - min) / range : 0.7;
-  }
-}
-
-function normalizeArrInto(values, out) {
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    if (!Number.isFinite(v)) continue;
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-  const range = max - min;
-  if (!(range > 1e-9)) {
-    out.fill(0.7);
-    return;
-  }
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
     out[i] = Number.isFinite(v) ? (v - min) / range : 0.7;
   }
 }

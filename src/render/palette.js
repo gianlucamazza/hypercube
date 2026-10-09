@@ -1,8 +1,8 @@
-// Visual encoding of the two depths the projection reports:
-//   depth in 3-space  -> presence: alpha and line width (near is vivid)
-//   depth in the 4th+ -> temperature: violet (far in w) through ice to amber
-// The temperature arc is deliberately narrow: the fourth dimension should be
-// felt as warmth, not read as a legend.
+// Visual encoding of the depths the projection reports:
+//   depth in 3-space       -> presence: alpha and line width (near is vivid)
+//   every axis before 3D   -> temperature: violet (far) through ice to amber
+// The temperature is the mean of those axes, each normalised on its own.
+// At n = 4 that is the old w channel. The arc stays narrow: warmth, not a legend.
 
 const ICE = [201, 212, 224];
 const AMBER = [226, 195, 154];
